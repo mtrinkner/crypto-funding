@@ -40,7 +40,9 @@ SURVIVORS = ["AVAX", "BTC", "DOGE", "ENA", "ETH", "HYPE", "MET", "NEAR", "ONDO",
 MAINT = 0.03
 HALF_TRIP = 2 * COST_PER_LEG
 RNG = np.random.default_rng(20261009)
-CRYPTO_FAMILY = (20, 21, 22, 24)    # the strategies whose variants share this data
+# Variants of strategies 20, 21, 22 and 24 (3 + 4 + 4 + 8), declared in edge-audit
+# before this repo split off. Every crypto trial declared here adds to it.
+CRYPTO_FAMILY_INHERITED = 19
 
 
 # ---------------------------------------------------------------- the engine
@@ -217,8 +219,8 @@ def main() -> int:
     d = panel()
     rows = registry.entries()
     n_trials = registry.trials()["n_trials"]
-    n_family = sum(max(1, r.get("variants", 1)) for r in rows
-                   if r["kind"] == "declare" and r["strategy_id"] in CRYPTO_FAMILY)
+    n_family = CRYPTO_FAMILY_INHERITED + sum(max(1, r.get("variants", 1)) for r in rows
+                                             if r["kind"] == "declare")
     members = sorted(d.loc[d.member > 0, "coin"].unique())
     holdout = [c for c in members if c not in SURVIVORS]
     seen = [c for c in members if c in SURVIVORS]

@@ -1,10 +1,26 @@
-# Crypto: perpetual funding carry
+# Crypto Funding Audit
 
-Strategies 20 to 22 in the registry. Everything in the rest of this repo tried
-to predict a price. The carry doesn't. A perpetual swap never expires, so the
-exchange ties it to spot with a periodic funding payment: when the perp trades
-above spot, longs pay shorts. Short perp against long spot is delta-neutral and
-collects that payment as a contractual cash flow.
+Perpetual-swap funding strategies, tested the way
+[edge-audit](https://github.com/mtrinkner/edge-audit) tests equity strategies.
+Every idea is declared in a hash-chained registry before it runs, every variant
+counts as a trial, and the luck bar rises with each one. Results are reported
+whichever way they go.
+
+Split off from edge-audit on 2026-10-09. The registry here starts by inheriting
+edge-audit's 304 trials (see `registry.py` and the first entry of
+`data/strategy_registry.jsonl`), because moving the research to a new repo
+doesn't reset how many times the same person has searched.
+
+**What funding is.** A perpetual swap never expires, so the exchange ties it to
+spot with a periodic funding payment: when the perp trades above spot, longs pay
+shorts. Short perp against long spot is delta-neutral and collects that payment
+as a contractual cash flow rather than a forecast.
+
+**Where it stands.** The signal generalizes, but the single-venue trade does
+not. On 94 held-out coins the switched carry has a Sharpe of 1.70 before
+liquidations and -0.24 after them, and the excess has decayed from 12% to 2%
+a year. Strategy 25, cross-venue dispersion between Hyperliquid and dYdX, is the
+open test.
 
 ## Headline: a universe without survivors
 
@@ -42,7 +58,7 @@ is 3.17.
   contribute, the top five are 36% of it, and delisted coins add 0.4 points.
   Without the top five it's still 7.5% with a Sharpe of 1.94. A wider universe
   has more coins whose funding goes negative, and the rule's job is to stop
-  paying on them. That makes it the best risk-adjusted result in this repo
+  paying on them. That makes it the best risk-adjusted result across edge-audit and this repo
   outside the forward test. It still doesn't clear the bar (deflated p 0.135),
   and its Sharpe is low-variance for the same reason strategy 20's daily Sharpe
   was 7: the volatility is the wobble in a cash flow, and the risk is a tail
@@ -286,16 +302,18 @@ the reproducible numbers replace the published ones, whichever way they go.
 ## Running it
 
 ```bash
-python3 crypto/ingest_hl_funding.py --same-coins   # Hyperliquid hourly funding
-python3 crypto/ingest_okx.py --basis               # OKX perp + spot closes, same coins
-python3 crypto/ingest_tbill.py                     # 3-month T-bill (FRED DTB3)
-python3 crypto/funding_carry.py                    # the analysis
-python3 crypto/carry_switch.py                     # strategy 21, switched on trailing funding
-python3 crypto/funding_crowding.py                 # strategy 22, funding as a crowding signal
-python3 crypto/ingest_hl_universe.py               # point-in-time universe, ~1 hour, resumable
-python3 crypto/pit_rerun.py                        # 20, 21, 22 on that universe
-python3 crypto/ingest_stablecoins.py               # DefiLlama total stablecoin supply
-python3 crypto/validate.py                         # holdout, liquidations, PSR, bootstrap, strategy 24
+pip install -r requirements.txt
+python3 registry.py status                  # every trial, and the bar it sets
+python3 ingest_hl_funding.py --same-coins   # Hyperliquid hourly funding
+python3 ingest_okx.py --basis               # OKX perp + spot closes, same coins
+python3 ingest_tbill.py                     # 3-month T-bill (FRED DTB3)
+python3 funding_carry.py                    # the analysis
+python3 carry_switch.py                     # strategy 21, switched on trailing funding
+python3 funding_crowding.py                 # strategy 22, funding as a crowding signal
+python3 ingest_hl_universe.py               # point-in-time universe, ~1 hour, resumable
+python3 pit_rerun.py                        # 20, 21, 22 on that universe
+python3 ingest_stablecoins.py               # DefiLlama total stablecoin supply
+python3 validate.py                         # holdout, liquidations, PSR, bootstrap, strategy 24
 ```
 
 The data the numbers come from is committed in `data/`.

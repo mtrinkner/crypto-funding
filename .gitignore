@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.DS_Store
+# Per-coin resume caches for the slow pulls; the combined parquet is the result.
+data/hl_funding_cache/
+data/dydx_funding_cache/
+*.log

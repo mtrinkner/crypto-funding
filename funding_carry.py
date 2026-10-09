@@ -42,10 +42,9 @@ import pandas as pd
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
-sys.path.insert(0, str(HERE.parent / "python"))
 
-from deflated_sharpe import deflated_sharpe_ratio, expected_max_sharpe  # noqa: E402
-import registry  # noqa: E402
+from deflated_sharpe import deflated_sharpe_ratio, expected_max_sharpe
+import registry
 
 INTEREST_PER_HOUR = 0.0001 / 8      # Hyperliquid's fixed interest leg
 COST_PER_LEG = 0.0008               # taker fee plus half-spread, each of 4 legs
