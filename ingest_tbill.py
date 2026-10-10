@@ -28,7 +28,7 @@ def main() -> int:
     d["date"] = pd.to_datetime(d["date"])
     d["yld"] = pd.to_numeric(d["yld"], errors="coerce") / 100
     d = d.dropna()
-    d = d[d.date >= "2023-01-01"]
+    d = d[d.date >= "2016-01-01"]
     d.to_parquet(OUT, index=False)
     print(f"tbill: {len(d):,} days, {d.date.min().date()} to {d.date.max().date()}, "
           f"latest {d.yld.iloc[-1]:.2%}")

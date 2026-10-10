@@ -17,13 +17,54 @@ shorts. Short perp against long spot is delta-neutral and collects that payment
 as a contractual cash flow rather than a forecast.
 
 **Where it stands.** Nothing here clears a defensible out-of-sample Sharpe of
-1.5. The single-venue carry generalizes to 94 held-out coins (1.70 before
+1.5, and on BitMEX from 2017 to 2023 the carry loses money in both bear years
+it had never seen. The single-venue carry generalizes to 94 held-out coins (1.70 before
 liquidations) but fails once its short perp gets liquidated (-0.24), and its
 excess decayed from 12% to 2% a year. The cross-venue version (strategy 25)
 finds a real, persistent dispersion between Hyperliquid and dYdX, with a gross
 Sharpe of 3.69 and 3.82 in 2025-26 alone. Execution costs as declared eat all
 but 1.1% of it (net Sharpe 0.39). Whether it's tradeable comes down to
 execution cost, which this data can't settle.
+
+## The bear markets it never saw: BitMEX, 2017 to 2023
+
+Everything above comes from Hyperliquid, which starts in May 2023, after the
+2018 crash and after Luna, 3AC and FTX in 2022. BitMEX ran the first perps and
+serves their funding publicly back to 2016. The rules already declared, with
+unchanged parameters and the same engine, costs and liquidation model, were run
+on BTC and ETH from March 2017 to April 2023, strictly before the Hyperliquid
+sample. The window and specs were fixed in the registry before any BitMEX data
+was pulled.
+
+**As precommitted, it looked like a breakthrough:** Sharpe 1.59 to 2.15, and
+positive in both bear years. **That was my mistake in the precommitment.**
+BitMEX's ETHUSD is a *quanto* contract, settled in BTC, and I modeled it as a
+plain dollar position. A short quanto hedged with spot ETH carries a cross-term
+of minus (ETH return × BTC return) every day, and ETH and BTC move together
+(correlation 0.83):
+
+| ETH, 2018-2023 | Per year |
+|---|---|
+| Funding received | 57.3% |
+| Quanto cross-term | -57.8% |
+| **Net** | **-0.5%** |
+
+The famous ETHUSD funding was the price of the quanto risk, almost to the
+decimal. With that cost charged:
+
+| Spec, 2017-03 to 2023-04 | Excess over T-bills | Sharpe | 2018 | 2022 |
+|---|---|---|---|---|
+| 20 always on, 3x | -1.8% | -0.15 | -10.1% | -8.4% |
+| 21 switched, 3x | -0.2% | -0.02 | -5.7% | -6.2% |
+| 24 equal, 2x | 0.3% | 0.03 | -5.2% | -5.7% |
+| 24 inverse-vol, 2x | 0.6% | 0.08 | -5.0% | -5.1% |
+| *BTC alone, switched / 2x* | *2.7% / 2.9%* | *0.37 / 0.51* | | |
+
+**The carry loses money in every bear year it hadn't seen.** The switch halves
+the damage relative to always-on, but it doesn't avoid it. BTC alone, a clean
+inverse contract, gives 0.37 to 0.51, the same picture as Hyperliquid. Both
+versions are printed by `out_of_time.py`, the precommitted one first, so the
+error stays on the record.
 
 ## Forward test: xv_v1 (strategy 26), running
 
@@ -399,6 +440,8 @@ python3 ingest_stablecoins.py               # DefiLlama total stablecoin supply
 python3 validate.py                         # holdout, liquidations, PSR, bootstrap, strategy 24
 python3 ingest_dydx.py                      # dYdX v4 hourly funding, ~30 min, resumable
 python3 cross_venue.py                      # strategy 25, Hyperliquid vs dYdX dispersion
+python3 ingest_bitmex.py                    # BitMEX funding + perp/spot daily since 2016
+python3 out_of_time.py                      # the carry rules on 2017-2023 bear markets
 ```
 
 The data the numbers come from is committed in `data/`.
@@ -407,12 +450,14 @@ The data the numbers come from is committed in `data/`.
 |---|---|
 | `hl_funding.parquet` | Hyperliquid funding, 16 coins, 2023-05 to 2026-10 |
 | `okx_basis.parquet` | OKX daily perp and spot closes for those coins |
-| `tbill.parquet` | FRED DTB3 |
+| `tbill.parquet` | FRED DTB3, 2016 on |
 | `hl_candles.parquet` | Hyperliquid daily perp candles, all 234 coins in meta, delisted included |
 | `hl_universe.parquet` | weekly top 20 by trailing 30-day volume, point in time |
 | `hl_funding_pit.parquet` | hourly funding for the 109 coins that ever made the top 20 |
 | `stablecoins.parquet` | DefiLlama total stablecoin supply, daily since 2017 |
 | `dydx_funding.parquet` | dYdX v4 hourly funding, 95 coins, 2023-10 to 2026-10 |
+| `bitmex_funding.parquet` | BitMEX XBTUSD (2016 on) and ETHUSD (2018 on) funding |
+| `bitmex_daily.parquet` | BitMEX perp and spot-index daily closes, 2017 on |
 | `okx_funding/perp/spot.parquet` | the original OKX pull: 100 days of funding, top 40 by coin count (see below) |
 
 ## Limits
