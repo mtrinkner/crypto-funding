@@ -1,0 +1,28 @@
+{
+  "spec": {
+    "name": "xv_v1",
+    "registry_strategy_id": 26,
+    "venues": [
+      "hyperliquid",
+      "dydx_v4"
+    ],
+    "universe": "weekly top 20 Hyperliquid perps by trailing 30-day notional, listed on dYdX",
+    "top_n": 20,
+    "volume_days": 30,
+    "signal_days": 30,
+    "min_hours_each_venue": 600,
+    "leverage": 2.0,
+    "entry_buffer": 0.02,
+    "cost_per_leg": 0.0003,
+    "collateral_move_cost": 0.0001,
+    "maintenance": 0.03,
+    "liquidation_penalty": 0.05,
+    "review": "weekly, Monday 00:00 UTC",
+    "pass": "at 52 live weeks: annualized Sharpe of weekly excess >= 1.5 and PSR(SR>0) >= 0.95",
+    "kill": "cumulative live excess below -5% of capital",
+    "kill_level": -0.05,
+    "pass_weeks": 52
+  },
+  "code_sha256": "179cf304bf65899049f1a8f150f58d06502dbcc0e0c0c1d43581034b99a9330e",
+  "frozen_at": "2026-10-10T16:31:04+00:00"
+}

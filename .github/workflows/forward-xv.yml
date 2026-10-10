@@ -1,0 +1,49 @@
+name: forward test xv_v1
+
+# Weekly: score last week's frozen positions, then write next week's before
+# their outcome exists. The runner refuses to write outside 12h of Monday
+# 00:00 UTC, so a delayed or manual run cannot backfill the live record.
+on:
+  schedule:
+    - cron: "20 0 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run: fetch and print, write nothing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: forward-xv
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: run
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            python forward_xv.py run --dry-run
+          else
+            python forward_xv.py run
+          fi
+          python forward_xv.py status
+      - name: commit the ledger
+        run: |
+          if [ -n "$(git status --porcelain data/forward_xv.jsonl)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898699+github-actions[bot]@users.noreply.github.com"
+            git add data/forward_xv.jsonl
+            git commit -m "forward xv_v1: week of $(date -u +%F)"
+            git push
+          fi

@@ -25,6 +25,37 @@ Sharpe of 3.69 and 3.82 in 2025-26 alone. Execution costs as declared eat all
 but 1.1% of it (net Sharpe 0.39). Whether it's tradeable comes down to
 execution cost, which this data can't settle.
 
+## Forward test: xv_v1 (strategy 26), running
+
+Strategy 25's dispersion is real before costs, and its costs are the open
+question. A backtest can't answer that honestly any more, because any cheaper
+variant would be designed after seeing the results. So a cheaper-execution
+version is frozen and scored only on weeks that hadn't happened when it was
+written down.
+
+- **Spec**, frozen in [`models/xv_v1.json`](models/xv_v1.json) with a SHA-256
+  of [`forward_xv.py`](forward_xv.py):
+  - Hyperliquid vs dYdX on the weekly top 20 by volume, 2x leverage.
+  - Trailing 30-day spread.
+  - Enter when the spread on capital beats T-bills by 2 points, exit below
+    T-bills.
+  - Costs: 3bp per leg for resting orders, 1bp to move collateral, and a 5%
+    penalty per liquidation.
+- **Mechanics.** Every Monday at 00:20 UTC a [GitHub Action](.github/workflows/forward-xv.yml)
+  scores last week's positions against what happened, then writes next week's
+  to the hash-chained [`data/forward_xv.jsonl`](data/forward_xv.jsonl) before
+  their outcome exists. The runner refuses to start if its code or spec has
+  changed, refuses live writes outside 12 hours of Monday 00:00 UTC, and
+  refuses `--as-of` outside dry runs, so history can't be backfilled.
+- **Pass, at 52 live weeks:** annualized Sharpe of 1.5 or more and PSR(SR > 0)
+  of 0.95 or more. The 26-week look is report-only. **Kill:** stop if
+  cumulative excess falls below -5% of capital.
+- Its backtest is in-sample by construction and isn't reported as evidence.
+
+```bash
+python3 forward_xv.py status
+```
+
 ## Strategy 25: cross-venue dispersion, Hyperliquid vs dYdX v4
 
 No spot leg. For each coin, short the perp on whichever venue has paid more
