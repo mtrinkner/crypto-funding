@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """OKX perpetual funding rates and prices for the cash-and-carry test.
 
-    python3 crypto/ingest_okx.py --top 40 --years 3
+    python3 ingest_okx.py --top 40 --years 3
 
 WHY THIS MARKET. Everything else in this project tried to predict a price. This
 does not. A perpetual swap has no expiry date, so the exchange tethers it to spot

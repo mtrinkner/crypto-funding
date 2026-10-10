@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Strategy 21: can trailing funding tell you when the carry is worth holding?
 
-    python3 crypto/carry_switch.py
+    python3 carry_switch.py
 
 Strategy 20 found the always-on carry beats T-bills by 4.0% a year per dollar of
 capital, and that all of it arrived in 2024. Funding is persistent, because the

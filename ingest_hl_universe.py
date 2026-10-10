@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """A point-in-time Hyperliquid universe, delisted coins included.
 
-    python3 crypto/ingest_hl_universe.py
-    python3 crypto/ingest_hl_universe.py --funding-only   # resume the slow part
-    python3 crypto/ingest_hl_universe.py --candles-only   # refresh candles, keep the universe
+    python3 ingest_hl_universe.py
+    python3 ingest_hl_universe.py --funding-only   # resume the slow part
+    python3 ingest_hl_universe.py --candles-only   # refresh candles, keep the universe
 
 Strategies 20-22 ran on today's 16 volume leaders. That is a universe of
 survivors: a coin is a leader today partly because it went up, and its funding
@@ -49,9 +49,10 @@ def candles(coin: str) -> pd.DataFrame:
     d["close"] = d["c"].astype(float)
     # The high is what liquidates a short perp, and a daily close never shows it.
     d["high"] = d["h"].astype(float)
+    d["low"] = d["l"].astype(float)              # and the low liquidates a long one
     d["notional"] = d["v"].astype(float) * d["close"]
     d["coin"] = coin
-    return d[["coin", "day", "close", "high", "notional"]]
+    return d[["coin", "day", "close", "high", "low", "notional"]]
 
 
 def universe(c: pd.DataFrame) -> pd.DataFrame:

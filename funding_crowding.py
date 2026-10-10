@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Strategy 22: does high funding predict lower returns?
 
-    python3 crypto/funding_crowding.py
+    python3 funding_crowding.py
 
 Funding is what levered longs pay to stay levered. When it is high the long side
 is crowded, paying heavily, and fragile to an unwind, so the crowding story says

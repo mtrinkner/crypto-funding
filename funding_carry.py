@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Strategy 20, rebuilt: what a delta-neutral funding carry actually pays.
 
-    python3 crypto/funding_carry.py
+    python3 funding_carry.py
 
 The first pass at this only summed funding prints. That number came out at a
 median 10.5% a year with a daily Sharpe of 7, and no script behind it was ever

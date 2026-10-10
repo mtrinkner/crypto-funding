@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Hyperliquid perpetual funding history: the carry trade's raw material.
 
-    python3 crypto/ingest_hl_funding.py --coins 25
+    python3 ingest_hl_funding.py --coins 25
 
 OKX's public funding endpoint retains about a hundred days, which is not enough
 to test anything. Binance and Bybit return 451 and 403 from this location.

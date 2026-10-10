@@ -16,11 +16,63 @@ spot with a periodic funding payment: when the perp trades above spot, longs pay
 shorts. Short perp against long spot is delta-neutral and collects that payment
 as a contractual cash flow rather than a forecast.
 
-**Where it stands.** The signal generalizes, but the single-venue trade does
-not. On 94 held-out coins the switched carry has a Sharpe of 1.70 before
-liquidations and -0.24 after them, and the excess has decayed from 12% to 2%
-a year. Strategy 25, cross-venue dispersion between Hyperliquid and dYdX, is the
-open test.
+**Where it stands.** Nothing here clears a defensible out-of-sample Sharpe of
+1.5. The single-venue carry generalizes to 94 held-out coins (1.70 before
+liquidations) but fails once its short perp gets liquidated (-0.24), and its
+excess decayed from 12% to 2% a year. The cross-venue version (strategy 25)
+finds a real, persistent dispersion between Hyperliquid and dYdX, with a gross
+Sharpe of 3.69 and 3.82 in 2025-26 alone. Execution costs as declared eat all
+but 1.1% of it (net Sharpe 0.39). Whether it's tradeable comes down to
+execution cost, which this data can't settle.
+
+## Strategy 25: cross-venue dispersion, Hyperliquid vs dYdX v4
+
+No spot leg. For each coin, short the perp on whichever venue has paid more
+funding over the trailing 30 days and long it on the other, when that spread
+on capital beats T-bills. Both legs post margin and both can be liquidated, the
+short on a rally and the long on a crash. The rule, costs, liquidation model,
+January 2024 start, four variants and pass criteria were declared before any
+dYdX data was pulled. dYdX v4's indexer is public: 1.97M hourly prints, 95
+coins, 81 of them on both venues while in the universe.
+
+**dYdX has no interest floor.** 52% of its hourly prints are exactly zero, while
+Hyperliquid's most common print is its 11% constant. So the raw spread is
+mostly Hyperliquid's constant, and it is decaying:
+
+| Year | Spread, short HL / long dYdX | HL interest leg | Spread excluding it |
+|---|---|---|---|
+| 2024 | 9.3% | 11.0% | -1.6% |
+| 2025 | 0.3% | 11.0% | -10.6% |
+| 2026 | -1.7% | 10.9% | -12.6% |
+
+| Variant | Excess over T-bills | Sharpe | 2024 | 2025-26 | Liquidations / coin-yr |
+|---|---|---|---|---|---|
+| **2x, 30-day (primary)** | **1.1%** | **0.39** | 2.77 | -0.36 | 0.47 |
+| 2x, 7-day | 0.8% | 0.29 | 1.52 | -0.12 | 0.54 |
+| 3x, 30-day | -9.4% | -1.66 | | | 2.19 |
+| 3x, 7-day | -11.1% | -1.73 | | | 2.48 |
+
+All three declared criteria fail: Sharpe 0.39 against 1.5, PSR(SR > 0) 0.71
+against 0.95, and -0.36 in 2025-26. The bootstrap 90% interval is -0.55 to 2.29.
+
+**But the dispersion is real; it's the costs that kill it.** The rule picks the
+direction (74% of the time short Hyperliquid), and what it captures holds up:
+
+| Primary, 2x 30-day | Excess | Sharpe |
+|---|---|---|
+| As declared | 1.1% | 0.39 |
+| Without switching and entry costs (8bp per leg) | 3.0% | 1.20 |
+| Without the daily collateral top-up | 2.9% | 1.05 |
+| Without the liquidation penalty | 2.9% | 1.61 |
+| **Nothing charged** | **6.5%** | **3.69** (3.82 in 2025-26) |
+
+The 5.5 points of drag split about evenly three ways. Each cost was set
+conservatively. The 8bp is a taker fill, where resting orders cost less. The
+top-up is charged as a trade, where in practice it's a stablecoin transfer
+between venues. And the penalty assumes every liquidation loses 5%. But any
+cheaper-execution variant designed now has seen this data, so it would be
+in-sample. **The only clean test of the execution question is a forward one.**
+
 
 ## Headline: a universe without survivors
 
@@ -314,6 +366,8 @@ python3 ingest_hl_universe.py               # point-in-time universe, ~1 hour, r
 python3 pit_rerun.py                        # 20, 21, 22 on that universe
 python3 ingest_stablecoins.py               # DefiLlama total stablecoin supply
 python3 validate.py                         # holdout, liquidations, PSR, bootstrap, strategy 24
+python3 ingest_dydx.py                      # dYdX v4 hourly funding, ~30 min, resumable
+python3 cross_venue.py                      # strategy 25, Hyperliquid vs dYdX dispersion
 ```
 
 The data the numbers come from is committed in `data/`.
@@ -327,6 +381,7 @@ The data the numbers come from is committed in `data/`.
 | `hl_universe.parquet` | weekly top 20 by trailing 30-day volume, point in time |
 | `hl_funding_pit.parquet` | hourly funding for the 109 coins that ever made the top 20 |
 | `stablecoins.parquet` | DefiLlama total stablecoin supply, daily since 2017 |
+| `dydx_funding.parquet` | dYdX v4 hourly funding, 95 coins, 2023-10 to 2026-10 |
 | `okx_funding/perp/spot.parquet` | the original OKX pull: 100 days of funding, top 40 by coin count (see below) |
 
 ## Limits

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """3-month T-bill yield from FRED (DTB3), the hurdle the carry has to clear.
 
-    python3 crypto/ingest_tbill.py
+    python3 ingest_tbill.py
 
 A delta-neutral carry ties up capital in the spot leg and margin in the perp leg.
 That capital could have sat in T-bills for 4-5% with no venue risk at all, so the

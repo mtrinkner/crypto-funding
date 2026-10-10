@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """How much of strategy 21's Sharpe survives an honest out-of-sample test?
 
-    python3 crypto/validate.py
+    python3 validate.py
 
 Everything here was fixed in the registry before it ran (the strategy 21
 validation precommitment and the strategy 24 declaration).

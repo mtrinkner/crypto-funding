@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Strategies 20, 21 and 22 again, on a universe without survivorship.
 
-    python3 crypto/pit_rerun.py
+    python3 pit_rerun.py
 
 Same rules, costs, lookbacks and primaries as funding_carry.py, carry_switch.py
 and funding_crowding.py. Three things change, all fixed in the registry before
@@ -40,7 +40,7 @@ def daily() -> pd.DataFrame:
     f["day"] = f["ts"].dt.floor("D")
     d = f.groupby(["coin", "day"]).agg(rate=("rate", "sum"), interest=("interest", "sum"),
                                        premium=("premium", "last")).reset_index()
-    c = pd.read_parquet(DATA / "hl_candles.parquet")[["coin", "day", "close", "high", "delisted"]]
+    c = pd.read_parquet(DATA / "hl_candles.parquet")[["coin", "day", "close", "high", "low", "delisted"]]
     d = d.merge(c, on=["coin", "day"], how="inner").sort_values(["coin", "day"])
     g = d.groupby("coin")
     d["ret"] = g["close"].pct_change()

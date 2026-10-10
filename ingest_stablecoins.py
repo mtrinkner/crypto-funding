@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Total stablecoin supply (DefiLlama), a proxy for collateral behind leverage.
 
-    python3 crypto/ingest_stablecoins.py
+    python3 ingest_stablecoins.py
 
 Levered longs on crypto venues are mostly collateralised in stablecoins, so the
 outstanding supply is a slow-moving measure of the dry powder behind funding. It
