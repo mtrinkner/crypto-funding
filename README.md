@@ -92,6 +92,33 @@ that cost the most to hold. On BitMEX from 2017 to 2023, the time-series
 versions on BTC and ETH give 0.45 to 0.49. It fails two of the three declared
 criteria.
 
+### Volatility scaling makes it worse (strategy 28)
+
+The standard fix for momentum crashes is to scale the book by the inverse of its
+own trailing volatility (Barroso and Santa-Clara 2015; Moreira and Muir 2017).
+It was declared before running, though tried because strategy 27 was this
+volatile, so it's post-hoc.
+
+| | Net | Sharpe | Max drawdown |
+|---|---|---|---|
+| Unscaled (27) | 30.4% | 0.52 | 85% |
+| **Scaled, 30-day volatility (primary)** | 11.1% | **0.35** | 57% |
+| Scaled, 90-day volatility | 13.8% | 0.49 | 51% |
+
+The reason is the most interesting crypto result here:
+
+| Momentum's own trailing volatility | Return a year | Sharpe |
+|---|---|---|
+| Calm third of days | -4% | -0.09 |
+| Middle third | -6% | -0.10 |
+| **Volatile third** | **+110%** | **1.41** |
+
+**All of crypto momentum's return arrives in its most volatile stretches**, the
+opposite of equity momentum. So scaling down when volatile cuts exactly the
+days that pay. The tempting inverse, trading momentum only when it's volatile,
+was thought of after seeing this table on this data, so it isn't backtested
+here. The only honest test of it is forward.
+
 ## Forward test: xv_v1 (strategy 26), running
 
 Strategy 25's dispersion is real before costs, and its costs are the open
@@ -525,6 +552,7 @@ python3 cross_venue.py                      # strategy 25, Hyperliquid vs dYdX d
 python3 ingest_dydx.py --candles            # dYdX daily volume and open interest
 python3 capacity.py                         # where strategy 25's gross came from, by liquidity
 python3 daily_momentum.py                   # strategy 27, daily momentum and reversal
+python3 vol_momentum.py                     # strategy 28, volatility-managed momentum
 python3 ingest_bitmex.py                    # BitMEX funding + perp/spot daily since 2016
 python3 out_of_time.py                      # the carry rules on 2017-2023 bear markets
 ```
