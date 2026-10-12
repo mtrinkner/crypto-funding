@@ -23,8 +23,9 @@ liquidations) but fails once its short perp gets liquidated (-0.24), and its
 excess decayed from 12% to 2% a year. The cross-venue version (strategy 25)
 finds a real, persistent dispersion between Hyperliquid and dYdX, with a gross
 Sharpe of 3.69 and 3.82 in 2025-26 alone. Execution costs as declared eat all
-but 1.1% of it (net Sharpe 0.39). Whether it's tradeable comes down to
-execution cost, which this data can't settle.
+but 1.1% of it (net Sharpe 0.39). Measured order books and dYdX's own volume history
+show why: the dispersion lives in markets almost nobody trades, and where size
+is possible it is about the T-bill rate.
 
 ## The bear markets it never saw: BitMEX, 2017 to 2023
 
@@ -124,6 +125,30 @@ scored week, so any verdict gets read with these numbers.
 ```bash
 python3 exec_costs.py summary
 ```
+
+### The dispersion lives where you can't trade
+
+Was the gross edge ever collectible? `capacity.py` buckets each coin-day
+strategy 25 held by dYdX's trailing 30-day volume for that coin, as known at
+the time. It's descriptive: no threshold is chosen, and no trials are added.
+
+| dYdX daily volume | Share of held days | Share of gross spread | Gross spread a year |
+|---|---|---|---|
+| under $0.1m | 29% | 31% | 13.2% |
+| $0.1m to $1m | 29% | 25% | 10.6% |
+| $1m to $10m | 27% | 33% | 15.5% |
+| **over $10m** | 15% | 7% | **5.7%** |
+
+In the only markets that could take size, the spread was 5.7% a year before
+costs, about what T-bills paid. And dYdX has drained: the median universe coin
+traded $5.3m a day there in early 2024 and $0.03m now. The share of the gross
+coming from coins trading over $1m a day fell from 59% in 2024 to 30% in 2025
+and 14% in 2026.
+
+That is the signature of a limits-to-arbitrage premium. The gap persists
+because the markets are too thin to arbitrage, so it was never a free
+dispersion. xv_v1 keeps running unchanged, as a record of a spread that can't
+be collected at size.
 
 ```bash
 python3 forward_xv.py status
@@ -472,6 +497,8 @@ python3 ingest_stablecoins.py               # DefiLlama total stablecoin supply
 python3 validate.py                         # holdout, liquidations, PSR, bootstrap, strategy 24
 python3 ingest_dydx.py                      # dYdX v4 hourly funding, ~30 min, resumable
 python3 cross_venue.py                      # strategy 25, Hyperliquid vs dYdX dispersion
+python3 ingest_dydx.py --candles            # dYdX daily volume and open interest
+python3 capacity.py                         # where strategy 25's gross came from, by liquidity
 python3 ingest_bitmex.py                    # BitMEX funding + perp/spot daily since 2016
 python3 out_of_time.py                      # the carry rules on 2017-2023 bear markets
 ```
@@ -488,6 +515,7 @@ The data the numbers come from is committed in `data/`.
 | `hl_funding_pit.parquet` | hourly funding for the 109 coins that ever made the top 20 |
 | `stablecoins.parquet` | DefiLlama total stablecoin supply, daily since 2017 |
 | `dydx_funding.parquet` | dYdX v4 hourly funding, 95 coins, 2023-10 to 2026-10 |
+| `dydx_candles.parquet` | dYdX v4 daily volume, trades and open interest, 95 coins |
 | `bitmex_funding.parquet` | BitMEX XBTUSD (2016 on) and ETHUSD (2018 on) funding |
 | `bitmex_daily.parquet` | BitMEX perp and spot-index daily closes, 2017 on |
 | `okx_funding/perp/spot.parquet` | the original OKX pull: 100 days of funding, top 40 by coin count (see below) |

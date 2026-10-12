@@ -2,6 +2,7 @@
 """dYdX v4 hourly funding for the coins in the Hyperliquid universe.
 
     python3 ingest_dydx.py
+    python3 ingest_dydx.py --candles   # daily volume and open interest: capacity
 
 The second venue for strategy 25. dYdX v4 is a decentralised perp exchange
 whose indexer serves funding history publicly, with no key, back to its launch
@@ -71,7 +72,61 @@ def history(ticker: str) -> pd.DataFrame:
     return d[["ts", "rate"]].sort_values("ts")
 
 
+def candles(ticker: str) -> pd.DataFrame:
+    """Daily candles: dYdX's own record of how much each market actually traded."""
+    out, to = [], None
+    while True:
+        q = {"resolution": "1DAY", "limit": 1000}
+        if to:
+            q["toISO"] = to
+        rows = get(f"/candles/perpetualMarkets/{ticker}?" + urllib.parse.urlencode(q))["candles"]
+        if not rows:
+            break
+        out.extend(rows)
+        oldest = pd.Timestamp(rows[-1]["startedAt"])
+        if len(rows) < 1000 or oldest <= START:
+            break
+        to = (oldest - pd.Timedelta(seconds=1)).isoformat().replace("+00:00", "Z")
+        time.sleep(0.1)
+    if not out:
+        return pd.DataFrame()
+    d = pd.DataFrame(out).drop_duplicates("startedAt")
+    d["day"] = pd.to_datetime(d["startedAt"], utc=True)
+    d["usd_volume"] = d["usdVolume"].astype(float)
+    d["oi_usd"] = d["startingOpenInterest"].astype(float) * d["close"].astype(float)
+    d["trades"] = d["trades"].astype(int)
+    return d[["day", "usd_volume", "oi_usd", "trades"]]
+
+
+def pairs() -> list[tuple[str, str]]:
+    universe = pd.read_parquet(DATA / "hl_universe.parquet")["coin"].unique()
+    listed = markets()
+    out = []
+    for c in sorted(universe):
+        t = (c[1:] if c.startswith("k") and c[1:].isupper() else c) + "-USD"
+        if t in listed:
+            out.append((c, t))
+    return out
+
+
+def main_candles() -> int:
+    frames = []
+    for i, (c, t) in enumerate(pairs(), 1):
+        d = candles(t)
+        d["coin"] = c
+        frames.append(d)
+        print(f"\r  candles {i} {c:<10}", end="", flush=True)
+    print()
+    f = pd.concat(frames, ignore_index=True)
+    f.to_parquet(DATA / "dydx_candles.parquet", index=False)
+    print(f"dydx candles: {len(f):,} coin-days, {f.coin.nunique()} coins, "
+          f"{f.day.min().date()} to {f.day.max().date()}")
+    return 0
+
+
 def main() -> int:
+    if "--candles" in sys.argv:
+        return main_candles()
     universe = pd.read_parquet(DATA / "hl_universe.parquet")["coin"].unique()
     listed = markets()
     pairs = []
