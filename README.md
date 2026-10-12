@@ -93,6 +93,38 @@ written down.
   cumulative excess falls below -5% of capital.
 - Its backtest is in-sample by construction and isn't reported as evidence.
 
+### What its trades would actually cost
+
+The forward test never trades, so it can't check its own 3bp per leg. Three
+times a day, a [second Action](.github/workflows/exec-costs.yml) reads both
+order books for every coin xv_v1 holds. It records the half-spread, what it
+would cost to fill $10k and $100k on the side the position needs (fees
+included), and each market's 24-hour volume and open interest, all to the
+hash-chained [`data/exec_costs.jsonl`](data/exec_costs.jsonl). It leaves the
+frozen test untouched.
+
+**The first snapshot (2026-10-12) says the 3bp assumption doesn't hold, and the
+reason is dYdX.**
+
+| Median across the 16 held coins | Hyperliquid | dYdX |
+|---|---|---|
+| Half-spread | 0.7bp | 35bp |
+| Taking $10k, with fees | 7bp | 42bp |
+| Taking $100k, with fees | 12bp | 214bp |
+| 24h volume | $15m to $2.4bn | under $0.05m on 14 of 16 |
+
+dYdX traded $3m of BTC in a day, against $2.4bn on Hyperliquid. XPL and LIT
+had zero trades, and dYdX open interest is under $0.3m on every held coin but
+BTC and SOL. So much of the funding spread comes from dYdX markets that almost
+nobody trades. The funding prints are real, but nobody can hold size against
+them. **The frozen spec has no capacity filter, so it can pass on positions
+that couldn't be put on.** That was written into the registry before the first
+scored week, so any verdict gets read with these numbers.
+
+```bash
+python3 exec_costs.py summary
+```
+
 ```bash
 python3 forward_xv.py status
 ```

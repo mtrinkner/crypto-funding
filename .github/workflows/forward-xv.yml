@@ -3,9 +3,15 @@ name: forward test xv_v1
 # Weekly: score last week's frozen positions, then write next week's before
 # their outcome exists. The runner refuses to write outside 12h of Monday
 # 00:00 UTC, so a delayed or manual run cannot backfill the live record.
+#
+# GitHub often starts scheduled jobs hours late (the first live run started
+# 5h41m late), so there are two backup runs. The runner is idempotent: once
+# this week's positions are written, a later run does nothing.
 on:
   schedule:
     - cron: "20 0 * * 1"
+    - cron: "20 3 * * 1"
+    - cron: "20 7 * * 1"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -17,7 +23,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: forward-xv
+  group: crypto-funding-writes
   cancel-in-progress: false
 
 jobs:
@@ -36,14 +42,17 @@ jobs:
             python forward_xv.py run --dry-run
           else
             python forward_xv.py run
+            # Measure what entering this week's positions would cost right now.
+            python exec_costs.py snapshot || echo "snapshot failed; the forward test is unaffected"
           fi
           python forward_xv.py status
-      - name: commit the ledger
+      - name: commit
         run: |
-          if [ -n "$(git status --porcelain data/forward_xv.jsonl)" ]; then
+          if [ -n "$(git status --porcelain data/)" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898699+github-actions[bot]@users.noreply.github.com"
-            git add data/forward_xv.jsonl
-            git commit -m "forward xv_v1: week of $(date -u +%F)"
+            git add data/forward_xv.jsonl data/exec_costs.jsonl 2>/dev/null || true
+            git commit -m "forward xv_v1: run of $(date -u +'%F %H:%M')"
+            git pull --rebase
             git push
           fi

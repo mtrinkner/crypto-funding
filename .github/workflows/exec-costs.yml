@@ -1,0 +1,39 @@
+name: execution cost snapshots
+
+# Three times a day: read both order books for every coin xv_v1 holds and
+# record what entering would cost, plus 24h volume and open interest. Many
+# snapshots make a distribution, not one lucky moment. Changes nothing about
+# how the forward test is scored.
+on:
+  schedule:
+    - cron: "40 2,10,18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: crypto-funding-writes
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python exec_costs.py snapshot
+      - name: commit
+        run: |
+          if [ -n "$(git status --porcelain data/exec_costs.jsonl)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898699+github-actions[bot]@users.noreply.github.com"
+            git add data/exec_costs.jsonl
+            git commit -m "exec costs: snapshot $(date -u +'%F %H:%M')"
+            git pull --rebase
+            git push
+          fi
