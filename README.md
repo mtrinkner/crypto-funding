@@ -67,6 +67,31 @@ inverse contract, gives 0.37 to 0.51, the same picture as Hyperliquid. Both
 versions are printed by `out_of_time.py`, the precommitted one first, so the
 error stays on the record.
 
+## A daily strategy: momentum on Hyperliquid (strategy 27)
+
+The signal here actually changes day to day, which the funding carry's doesn't.
+Crypto shows momentum at 1-4 week horizons (Liu, Tsyvinski and Wu, JF 2022)
+and reversal at very short ones. The test ran on the point-in-time top 20
+Hyperliquid perps, rebalanced at each daily close. Costs are 8bp per side
+(measured at about 7bp to take $10k), and funding is paid or received on every
+position. Six variants were declared, with the primary named before running:
+
+| Variant | Gross | Funding | Costs | Net | Sharpe |
+|---|---|---|---|---|---|
+| **Cross-sectional, 21 days (primary)** | 58.7% | -9.9% | -18.4% | **30.4%** | **0.52** |
+| Cross-sectional, 7 days | 35.7% | -6.6% | -31.1% | -2.0% | -0.03 |
+| Cross-sectional, 1-day reversal | -8.4% | +5.2% | -77.6% | -80.8% | -1.41 |
+| Time-series, 21 / 7 / 1 days | | | | 6.2% / 1.6% / -27.8% | 0.15 / 0.03 / -0.54 |
+
+**Three-week momentum is real and unusable.** It earns 30% a year after costs,
+is positive in both halves of the sample, and is uncorrelated with BTC. But it
+went +87%, -48%, +123% and -30% in successive years, with an 85% maximum
+drawdown, for a Sharpe of 0.52 against a luck bar of 3.23. Shorter horizons are
+eaten by turnover. Funding works against momentum, because it's long the coins
+that cost the most to hold. On BitMEX from 2017 to 2023, the time-series
+versions on BTC and ETH give 0.45 to 0.49. It fails two of the three declared
+criteria.
+
 ## Forward test: xv_v1 (strategy 26), running
 
 Strategy 25's dispersion is real before costs, and its costs are the open
@@ -499,6 +524,7 @@ python3 ingest_dydx.py                      # dYdX v4 hourly funding, ~30 min, r
 python3 cross_venue.py                      # strategy 25, Hyperliquid vs dYdX dispersion
 python3 ingest_dydx.py --candles            # dYdX daily volume and open interest
 python3 capacity.py                         # where strategy 25's gross came from, by liquidity
+python3 daily_momentum.py                   # strategy 27, daily momentum and reversal
 python3 ingest_bitmex.py                    # BitMEX funding + perp/spot daily since 2016
 python3 out_of_time.py                      # the carry rules on 2017-2023 bear markets
 ```
