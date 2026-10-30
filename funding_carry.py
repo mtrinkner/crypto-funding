@@ -72,11 +72,7 @@ def load_basis() -> pd.DataFrame:
     # Hong Kong midnight), which is what the pinned file holds. ingest_okx.py now
     # requests 1Dutc, so a re-pull would shift every bar by 16 hours. Refuse
     # rather than misalign silently.
-    hours = b["ts"].dt.hour.unique()
-    if set(hours) != {16}:
-        raise RuntimeError(f"okx_basis.parquet bars open at {sorted(hours)}h UTC, not 16h: "
-                           "it was re-pulled with bar=1Dutc. Set DAY_OFFSET to 0 and the "
-                           "8-hour shift in load_rally() to 0 before using it.")
+    check_16h(b, "okx_basis.parquet")
     g = b.groupby("coin")
     # Long spot, short perp, per dollar of notional.
     b["basis_pnl"] = g["close_spot"].pct_change() - g["close_perp"].pct_change()
@@ -85,18 +81,33 @@ def load_basis() -> pd.DataFrame:
     return b.merge(load_rally(), on=["coin", "day"], how="left")
 
 
-def load_rally() -> pd.DataFrame:
-    """The day's high against the prior close, which is what liquidates a short perp.
+def check_16h(d: pd.DataFrame, name: str) -> None:
+    hours = d["ts"].dt.hour.unique()
+    if set(hours) != {16}:
+        raise RuntimeError(f"{name} bars open at {sorted(hours)}h UTC, not 16h: it was "
+                           "re-pulled with bar=1Dutc. Set DAY_OFFSET to 0 before using it.")
 
-    OKX's daily bars have closes only, so the high comes from Hyperliquid's daily
-    perp candle for the same coin. An OKX bar opens at 16:00 UTC, so OKX day d
-    is matched to Hyperliquid's UTC day d+1, which covers 16 of its 24 hours.
-    That's an approximation (audit 2026-10-29, finding A1)."""
-    c = pd.read_parquet(DATA / "hl_candles.parquet")[["coin", "day", "close", "high"]]
-    c = c.sort_values(["coin", "day"])
+
+def load_rally() -> pd.DataFrame:
+    """The day's high on the OKX perp against its prior close, which is what
+    liquidates the short perp. Same 16:00 UTC bars as okx_basis.parquet
+    (ingest_okx.py --perp-highs). This replaced a Hyperliquid-candle proxy that
+    was shifted 8 hours against the OKX bar and had no high for 17% of 2023
+    coin-days (follow-up to audit 2026-10-29)."""
+    c = pd.read_parquet(DATA / "okx_basis_perp_ohlc.parquet")
+    check_16h(c, "okx_basis_perp_ohlc.parquet")
+    c = c.sort_values(["coin", "ts"])
     c["rally"] = c["high"] / c.groupby("coin")["close"].shift(1) - 1
-    c["day"] = c["day"] - pd.Timedelta(hours=8)          # HL 00:00 d+1 -> OKX 16:00 d
-    return c[["coin", "day", "rally"]]
+    return c.rename(columns={"ts": "day"})[["coin", "day", "rally"]]
+
+
+def require_rally(p: pd.DataFrame) -> None:
+    """A held coin-day with no high can't be liquidated, which flatters the book.
+    Fail instead."""
+    miss = p[p["rally"].isna()]
+    if len(miss):
+        raise RuntimeError(f"{len(miss)} held coin-days have no OKX perp high, e.g. "
+                           f"{miss[['coin', 'day']].head(3).to_dict('records')}")
 
 
 def annualized_by_coin(f: pd.DataFrame) -> pd.DataFrame:
@@ -141,6 +152,7 @@ def main() -> int:
     fd = f.groupby(["coin", "day"])[["rate", "interest", "market"]].sum().reset_index()
     p = fd.merge(b[["coin", "day", "basis_pnl", "basis", "rally"]],
                  on=["coin", "day"], how="inner").dropna(subset=["basis_pnl"])
+    require_rally(p)
     # Entry and exit, four legs each way, charged once per coin.
     rt = 2 * 2 * COST_PER_LEG
     first = p.groupby("coin")["day"].transform("min") == p["day"]
@@ -206,7 +218,7 @@ def main() -> int:
     print(f"  liquidations of the 3x short perp (day's high >= prior close +{PERP_MARGIN - MAINT:.0%})")
     print(f"    {liq.coin.nunique()} of {p.coin.nunique()} coins, "
           f"{len(liq)} coin-days, {len(liq) / coin_years:.1f} per coin-year "
-          f"({p['rally'].isna().mean():.1%} of coin-days have no Hyperliquid high)")
+          f"(OKX perp highs)")
 
     out = HERE / "reports"
     out.mkdir(exist_ok=True)

@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 
 from funding_carry import (COST_PER_LEG, LIQ_PENALTY, MAINT, PERP_MARGIN, DATA, HERE,
-                           load_basis, load_funding, sharpe)
+                           load_basis, load_funding, require_rally, sharpe)
 from deflated_sharpe import deflated_sharpe_ratio, expected_max_sharpe
 import registry
 
@@ -42,6 +42,7 @@ def panel() -> pd.DataFrame:
     fd = f.groupby(["coin", "day"])["rate"].sum().reset_index()
     p = fd.merge(b[["coin", "day", "basis_pnl", "rally"]], on=["coin", "day"], how="inner")
     p = p.dropna(subset=["basis_pnl"]).sort_values(["coin", "day"]).reset_index(drop=True)
+    require_rally(p)
     tb = pd.read_parquet(DATA / "tbill.parquet").set_index("date")["yld"]
     p["tbill"] = tb.reindex(p["day"].dt.tz_localize(None).dt.normalize(),
                             method="ffill").values

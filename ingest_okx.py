@@ -96,7 +96,7 @@ def funding_history(inst: str, years: float) -> pd.DataFrame:
     return d[["inst", "ts", "rate"]][d["ts"] >= pd.Timestamp(cutoff, unit="ms", tz="UTC")]
 
 
-def candles(inst: str, years: float) -> pd.DataFrame:
+def candles(inst: str, years: float, bar: str = "1Dutc") -> pd.DataFrame:
     cutoff = (datetime.now(timezone.utc).timestamp() - years * 365 * 86400) * 1000
     out, after = [], None
     while True:
@@ -104,7 +104,7 @@ def candles(inst: str, years: float) -> pd.DataFrame:
         # (16:00 UTC). The pinned okx_*.parquet files were pulled with 1D, and
         # funding_carry.py's DAY_OFFSET assumes that; it refuses to run on a
         # 1Dutc re-pull until the offset is changed (audit 2026-10-29).
-        p = f"/market/history-candles?instId={inst}&bar=1Dutc&limit=100"
+        p = f"/market/history-candles?instId={inst}&bar={bar}&limit=100"
         if after:
             p += f"&after={after}"
         batch = get(p)
@@ -153,6 +153,24 @@ def basis(years: float) -> int:
     return 0
 
 
+def perp_highs(years: float) -> int:
+    """Daily OHLC of the OKX perp for each coin in okx_basis.parquet, on the same
+    16:00 UTC bars (bar=1D), so funding_carry.py can liquidate the short perp on
+    OKX's own high. okx_basis.parquet kept closes only, and okx_perp.parquet is a
+    different universe (today's top 40 by volume) holding 6 of these 16 coins."""
+    coins = sorted(pd.read_parquet(DATA / "okx_basis.parquet")["coin"].unique())
+    frames = []
+    for i, c in enumerate(coins, 1):
+        frames.append(candles(f"{c}-USDT-SWAP", years, bar="1D").assign(coin=c))
+        print(f"\r  {i}/{len(coins)} {c:<8}", end="", flush=True)
+    print()
+    d = pd.concat(frames, ignore_index=True).sort_values(["coin", "ts"])
+    d.to_parquet(DATA / "okx_basis_perp_ohlc.parquet", index=False)
+    print(f"perp OHLC: {len(d):,} coin-days, {d.coin.nunique()} coins, "
+          f"{d.ts.min().date()} to {d.ts.max().date()}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--top", type=int, default=40)
@@ -160,8 +178,13 @@ def main() -> int:
     ap.add_argument("--basis", action="store_true",
                     help="only pull perp and spot candles for the Hyperliquid coins, "
                          "to measure the basis the funding series leaves out")
+    ap.add_argument("--perp-highs", action="store_true",
+                    help="only pull OKX perp OHLC (bar=1D) for the okx_basis coins, "
+                         "for liquidations in funding_carry.py")
     args = ap.parse_args()
 
+    if args.perp_highs:
+        return perp_highs(args.years)
     if args.basis:
         return basis(args.years)
 

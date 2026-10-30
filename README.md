@@ -292,8 +292,8 @@ universe rule was fixed in the registry before anything was pulled.
 
 | | 16 survivors | **Point-in-time** |
 |---|---|---|
-| 20: always-on carry, excess over T-bills | 1.1%, Sharpe 0.26 | **-5.6%, Sharpe -1.08** |
-| 21: switched on trailing funding | 4.0%, Sharpe 1.26 | **2.2%, Sharpe 0.72** |
+| 20: always-on carry, excess over T-bills | 0.6%, Sharpe 0.14 | **-5.6%, Sharpe -1.08** |
+| 21: switched on trailing funding | 4.0%, Sharpe 1.19 | **2.2%, Sharpe 0.72** |
 | 22: funding as a crowding signal, IC (t) | +0.06 (2.15) | **+0.0001 (0.00)** |
 | *20, before liquidations (as first published)* | *4.0%, 0.87* | *3.0%, 0.51* |
 | *21, before liquidations (as first published)* | *5.9%, 1.71* | *7.6%, 1.92* |
@@ -307,8 +307,11 @@ liquidating the 3x short perp, while `validate.py` charged liquidations only on
 the holdout. They now use `validate.py`'s model: liquidated when the day's high
 clears the prior close by 30%, at a cost of 5% of notional plus re-entry. That's
 147 liquidations on 24,839 held coin-days for strategy 20 and 92 on 15,983 for
-strategy 21. The uncharged figures, kept above in italics, are what the rest of
-this section originally described.
+strategy 21. On the 16 survivors the high is OKX's own perp high on the same
+16:00 UTC bar as the basis: 31 liquidations for strategy 20 and 18 for 21. Commit
+895a32c first used Hyperliquid's daily candle shifted 8 hours as a proxy, which
+gave 1.1% / 0.26 and 4.0% / 1.26. The uncharged figures, kept above in italics,
+are what the rest of this section originally described.
 
 | Year | 20 always on | 21 switched | 20, liquidations charged | 21, liquidations charged |
 |---|---|---|---|---|
@@ -440,12 +443,14 @@ significant. **Nothing here clears a defensible out-of-sample 1.5.**
 | Per dollar of capital (spot leg + 3x perp margin) | 8.4% |
 | **In excess of T-bills** | **4.0%** |
 | Monthly Sharpe of the excess | 0.87 against a luck bar of 1.50, deflated p 0.13 |
-| **With liquidations charged (audit 2026-10-29)** | **1.1% excess, Sharpe 0.26, deflated p 0.008** |
+| **With liquidations charged (audit 2026-10-29)** | **0.6% excess, Sharpe 0.14, deflated p 0.002 at 865 trials** |
 
 The bar and deflated p were first printed in weekly units, as 3.07 and 0.024.
-The liquidation line uses `validate.py`'s model, with the high taken from
-Hyperliquid's daily candle, because OKX bars have closes only: 27 liquidations
-on these 16 coins.
+The liquidation line uses `validate.py`'s model on the OKX perp's own daily
+high (`ingest_okx.py --perp-highs`, the same 16:00 UTC bars as the basis): 31
+liquidations on these 16 coins. Commit 895a32c used Hyperliquid's daily candle
+shifted 8 hours instead, which straddles two OKX bars, and printed 1.1%, Sharpe
+0.26, 27 liquidations.
 
 | Year | Funding | Excess over T-bills, per dollar of capital |
 |---|---|---|
@@ -485,8 +490,9 @@ named in advance.
 
 The luck bar at 228 trials is 1.50, and the primary's deflated p is 0.64 (first
 printed in weekly units as 3.08 and 0.11). Those figures are before
-liquidations. Charged, the primary is 4.0% and Sharpe 1.26, deflated p 0.21 at
-today's 865 trials (0.30 at 317), and the other variants are 1.05 to 1.15.
+liquidations. Charged on OKX's own perp high, the primary is 4.0% and Sharpe
+1.19, deflated p 0.17 at today's 865 trials, and the other variants are 0.91 to
+1.10 (895a32c's Hyperliquid proxy gave 1.26, and 1.05 to 1.15).
 
 It isn't lookahead. Letting the rule peek one week ahead gives 6.5%. Delaying
 it 7, 14 and 30 days gives 5.3%, 4.8% and 4.2%, a smooth decay toward
