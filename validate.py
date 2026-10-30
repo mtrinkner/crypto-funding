@@ -207,8 +207,8 @@ def line(name: str, b: pd.Series, n_trials: int, n_family: int) -> str:
     n = len(monthly(b))
     return (f"  {name:<44}{b.mean() * 365:7.1%}{sr:7.2f}"
             f"{psr(b, 0):7.2f}{psr(b, 1.5):7.2f}"
-            f"{deflated_sharpe_ratio(sr, n_family, n):8.3f}"
-            f"{deflated_sharpe_ratio(sr, n_trials, n):8.3f}")
+            f"{deflated_sharpe_ratio(sr, n_family, n, periods_per_year=12):8.3f}"
+            f"{deflated_sharpe_ratio(sr, n_trials, n, periods_per_year=12):8.3f}")
 
 
 HEAD = (f"  {'':<44}{'excess':>7}{'SR':>7}{'PSR>0':>7}{'PSR>1.5':>8}"
@@ -227,8 +227,8 @@ def main() -> int:
     print(f"{len(members)} coins in the universe: {len(seen)} seen while forming the idea, "
           f"{len(holdout)} held out")
     print(f"trials: {n_trials} in the repo, {n_family} in the crypto family "
-          f"(bars {expected_max_sharpe(n_trials, 42):.2f} / "
-          f"{expected_max_sharpe(n_family, 42):.2f} at 42 months)\n")
+          f"(bars {expected_max_sharpe(n_trials, 42, periods_per_year=12):.2f} / "
+          f"{expected_max_sharpe(n_family, 42, periods_per_year=12):.2f} at 42 months)\n")
 
     print("STRATEGY 21 AS SPECIFIED (30d, weekly, 3x, equal weight)")
     print(HEAD)
@@ -283,8 +283,8 @@ def main() -> int:
                 n = len(monthly(h))
                 print(f"  {name + (' PRIMARY' if primary else ''):<30}{sharpe_m(s):9.2f}"
                       f"{h.mean() * 365:12.1%}{sr:9.2f}{psr(h, 1.5):9.2f}"
-                      f"{deflated_sharpe_ratio(sr, n_family, n):9.3f}"
-                      f"{deflated_sharpe_ratio(sr, n_trials, n):9.3f}")
+                      f"{deflated_sharpe_ratio(sr, n_family, n, periods_per_year=12):9.3f}"
+                      f"{deflated_sharpe_ratio(sr, n_trials, n, periods_per_year=12):9.3f}")
                 results.append({"variant": name, "primary": primary, "seen_sr": sharpe_m(s),
                                 "holdout_excess": h.mean() * 365, "holdout_sr": sr,
                                 "psr_1_5": psr(h, 1.5)})

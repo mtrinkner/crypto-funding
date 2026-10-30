@@ -57,6 +57,11 @@ def get(path: str, retries: int = 3):
 
 
 def top_symbols(n: int) -> list[str]:
+    # SURVIVORSHIP: this ranks on TODAY's 24h volume, so the universe is coins
+    # that are large now, chosen with hindsight. It feeds only the 16-coin
+    # studies (strategies 20-22, funding_carry.py and carry_switch.py); the
+    # point-in-time universe in ingest_hl_universe.py is the one without this
+    # bias (audit 2026-10-29).
     tick = get("/market/tickers?instType=SWAP")
     # volCcy24h is in coins, not dollars. Ranking on it alone puts sub-penny
     # meme coins at the top and leaves BTC and ETH out entirely, which is what
@@ -95,7 +100,11 @@ def candles(inst: str, years: float) -> pd.DataFrame:
     cutoff = (datetime.now(timezone.utc).timestamp() - years * 365 * 86400) * 1000
     out, after = [], None
     while True:
-        p = f"/market/history-candles?instId={inst}&bar=1D&limit=100"
+        # 1Dutc closes at 00:00 UTC; plain 1D closes at 00:00 Hong Kong time
+        # (16:00 UTC). The pinned okx_*.parquet files were pulled with 1D, and
+        # funding_carry.py's DAY_OFFSET assumes that; it refuses to run on a
+        # 1Dutc re-pull until the offset is changed (audit 2026-10-29).
+        p = f"/market/history-candles?instId={inst}&bar=1Dutc&limit=100"
         if after:
             p += f"&after={after}"
         batch = get(p)
@@ -108,8 +117,10 @@ def candles(inst: str, years: float) -> pd.DataFrame:
         time.sleep(0.12)
     if not out:
         return pd.DataFrame()
-    d = pd.DataFrame(out).iloc[:, :6]
-    d.columns = ["ms", "open", "high", "low", "close", "vol"]
+    d = pd.DataFrame(out).iloc[:, [0, 1, 2, 3, 4, 5, 8]]
+    d.columns = ["ms", "open", "high", "low", "close", "vol", "confirm"]
+    # The newest bar is still forming ("0"): its close isn't a close yet.
+    d = d[d["confirm"] == "1"]
     d["ts"] = pd.to_datetime(d["ms"].astype("int64"), unit="ms", utc=True)
     for c in ("open", "high", "low", "close", "vol"):
         d[c] = d[c].astype(float)

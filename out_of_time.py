@@ -121,7 +121,7 @@ def main() -> int:
             y = o.groupby(o.index.year).mean() * 365
             sr = sharpe_m(o)
             print(f"{name:<32}{o.mean() * 365:8.1%}{sr:7.2f}{psr(o, 0):7.2f}"
-                  f"{deflated_sharpe_ratio(sr, n_all, len(monthly(o))):7.3f}"
+                  f"{deflated_sharpe_ratio(sr, n_all, len(monthly(o)), periods_per_year=12):7.3f}"
                   f"{y.get(2018, np.nan):8.1%}{y.get(2022, np.nan):8.1%}{sharpe_m(later):14.2f}")
             rows.append({"spec": name, "excess": o.mean() * 365, "sharpe": sr,
                          **{str(k): v for k, v in y.items()}})

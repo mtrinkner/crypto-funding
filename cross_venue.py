@@ -38,7 +38,7 @@ HALF_TRIP = 2 * COST_PER_LEG               # two legs, one direction
 VARIANTS = [(2.0, 30, True), (2.0, 7, False), (3.0, 30, False), (3.0, 7, False)]
 
 
-def panel() -> pd.DataFrame:
+def panel(drop_settled: bool = True) -> pd.DataFrame:
     hl = daily()
     dy = pd.read_parquet(DATA / "dydx_funding.parquet")
     # A handful of hours carry two prints; keep the last one for each hour.
@@ -48,6 +48,15 @@ def panel() -> pd.DataFrame:
     dyd = dy.groupby(["coin", "day"])["rate"].sum().rename("dy_rate").reset_index()
 
     d = hl.merge(dyd, on=["coin", "day"], how="inner").sort_values(["coin", "day"])
+    if drop_settled:
+        # After final settlement dYdX keeps printing rate = 0, so the spread
+        # becomes pure Hyperliquid funding on a market nobody can trade (audit
+        # 2026-10-29, finding A2). Drop every coin-day from the stop onward;
+        # stops come from ingest_dydx.py --status.
+        st = pd.read_parquet(DATA / "dydx_status.parquet").dropna(subset=["stopped"])
+        stop = d["coin"].map(st.set_index("coin")["stopped"].dt.floor("D"))
+        dead = stop.notna() & (d["day"] >= stop)
+        d = d[~dead]
     d = d.reset_index(drop=True)
     g = d.groupby("coin")
     d["spread"] = d["rate"] - d["dy_rate"]           # what short HL / long dYdX earns
@@ -106,7 +115,7 @@ def main() -> int:
           f"{live.day.min().date()} to {live.day.max().date()}, "
           f"{live.groupby('day').coin.size().mean():.1f} per day on average")
     print(f"trials: {n_all} total, {n_fam} in the crypto family "
-          f"(bars {expected_max_sharpe(n_all, 33):.2f} / {expected_max_sharpe(n_fam, 33):.2f} "
+          f"(bars {expected_max_sharpe(n_all, 33, periods_per_year=12):.2f} / {expected_max_sharpe(n_fam, 33, periods_per_year=12):.2f} "
           f"at 33 months)\n")
 
     # What the spread is made of: Hyperliquid's interest constant has no dYdX twin.
@@ -132,7 +141,7 @@ def main() -> int:
         liq_rate = held["liq"].sum() / (len(held) / 365) if len(held) else 0
         name = f"{lev:.0f}x, {lb}d" + ("  PRIMARY" if primary else "")
         print(f"{name:<22}{b.mean() * 365:8.1%}{sr:7.2f}{psr(b, 0):7.2f}{psr(b, 1.5):8.2f}"
-              f"{deflated_sharpe_ratio(sr, n_fam, n):8.3f}{deflated_sharpe_ratio(sr, n_all, n):8.3f}"
+              f"{deflated_sharpe_ratio(sr, n_fam, n, periods_per_year=12):8.3f}{deflated_sharpe_ratio(sr, n_all, n, periods_per_year=12):8.3f}"
               f"{sharpe_m(early):7.2f}{sharpe_m(late):9.2f}{liq_rate:8.2f}")
         if primary:
             prim, px = b, x

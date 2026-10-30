@@ -105,14 +105,14 @@ def main() -> int:
         h1, h2 = net[net.index < mid], net[net.index >= mid]
         print(f"{name:<26}{(b.price.mean()) * 365:8.1%}{b.fund.mean() * 365:7.1%}"
               f"{-b.cost.mean() * 365:8.1%}{net.mean() * 365:8.1%}{sr:7.2f}{psr(net, 0):7.2f}"
-              f"{deflated_sharpe_ratio(sr, n_all, n_m):7.3f}{sharpe_m(h1):9.2f}{sharpe_m(h2):9.2f}"
+              f"{deflated_sharpe_ratio(sr, n_all, n_m, periods_per_year=12):7.3f}{sharpe_m(h1):9.2f}{sharpe_m(h2):9.2f}"
               f"{b.turnover.mean():8.2f}{net.corr(btc.reindex(net.index)):9.2f}")
         rows.append({"variant": name, "net": net.mean() * 365, "sharpe": sr,
                      "first_half": sharpe_m(h1), "second_half": sharpe_m(h2)})
         if primary:
             prim, pb = net, b
     print(f"\nluck bar at {n_all} trials and {len(monthly(prim))} months: "
-          f"{expected_max_sharpe(n_all, len(monthly(prim))):.2f}")
+          f"{expected_max_sharpe(n_all, len(monthly(prim)), periods_per_year=12):.2f}")
 
     yr = prim.groupby(prim.index.year).mean() * 365
     print("primary net by year: " + ", ".join(f"{y} {v:+.1%}" for y, v in yr.items()))

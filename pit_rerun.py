@@ -58,8 +58,18 @@ def daily() -> pd.DataFrame:
     return d.reset_index(drop=True)
 
 
-def carry_book(d: pd.DataFrame, lookback: int | None) -> pd.DataFrame:
-    """lookback None is always on (strategy 20); 30 is strategy 21's primary."""
+MAINT = 0.03                 # maintenance margin, as in validate.py
+LIQ_PENALTY = 0.05           # per liquidation, on notional, plus re-entry legs
+
+
+def carry_book(d: pd.DataFrame, lookback: int | None,
+               liq_penalty: float | None = LIQ_PENALTY) -> pd.DataFrame:
+    """lookback None is always on (strategy 20); 30 is strategy 21's primary.
+
+    The short perp at 3x is liquidated when the day's high clears the prior close
+    by 1/L - 3% (validate.py's model): lose `liq_penalty` of notional plus a
+    re-entry round trip. liq_penalty=None gives the uncharged book that was first
+    published (audit 2026-10-29, finding A1)."""
     d = d.copy()
     g = d.groupby("coin")["rate"]
     if lookback:
@@ -74,7 +84,12 @@ def carry_book(d: pd.DataFrame, lookback: int | None) -> pd.DataFrame:
     prev = d.groupby("coin")["pos"].shift(1).fillna(0.0)
     last = d.groupby("coin")["day"].transform("max") == d["day"]
     switches = (d["pos"] - prev).abs() + np.where(last, d["pos"], 0.0)
-    carry = (d["rate"] + d["basis_pnl"].fillna(0.0)) / (1 + PERP_MARGIN)
+    pnl = d["rate"] + d["basis_pnl"].fillna(0.0)                 # per $ notional
+    if liq_penalty is not None:
+        rally = d["high"] / d.groupby("coin")["close"].shift(1) - 1
+        d["liq"] = (rally >= PERP_MARGIN - MAINT).astype(float)
+        pnl = pnl - d["liq"] * (liq_penalty + 2 * HALF_TRIP)
+    carry = pnl / (1 + PERP_MARGIN)
     d["excess"] = d["pos"] * (carry - d["tbill"] / 365) - switches * HALF_TRIP / (1 + PERP_MARGIN)
     # Equal weight across the universe; a coin switched off sits in T-bills (0 excess).
     return d[d["member"] > 0]
@@ -128,16 +143,23 @@ def main() -> int:
     }).to_string(float_format=lambda v: f"{v:8.1%}"))
 
     print("\nstrategy 20 / 21: excess over T-bills per dollar of capital, after costs")
-    print(f"  {'':<26}{'excess':>8}{'mo. SR':>8}{'bar':>7}{'p':>7}{'worst mo':>10}"
+    print(f"  {'':<32}{'excess':>8}{'mo. SR':>8}{'bar':>7}{'p':>7}{'worst mo':>10}"
           f"   2023    2024    2025    2026")
-    for name, lb, old in [("20 always on", None, "was 4.0%, 0.87"),
-                          ("21 switched 30d/weekly", 30, "was 5.9%, 1.71")]:
-        b = carry_book(d, lb).groupby("day")["excess"].mean()
+    rows = [("20 always on, no liquidations", None, None, "as first published"),
+            ("20 always on", None, LIQ_PENALTY, "liquidations charged"),
+            ("21 switched, no liquidations", 30, None, "as first published"),
+            ("21 switched 30d/weekly", 30, LIQ_PENALTY, "liquidations charged")]
+    for name, lb, pen, old in rows:
+        cb = carry_book(d, lb, liq_penalty=pen)
+        b = cb.groupby("day")["excess"].mean()
+        if pen is not None:
+            held = cb[cb["pos"] > 0]
+            old += f", {int(held['liq'].sum())} on {len(held):,} held coin-days"
         m = monthly(b)
         s = sharpe(m, 12)
         yr = b.groupby(b.index.year).mean() * 365
-        print(f"  {name:<26}{b.mean() * 365:8.1%}{s:8.2f}"
-              f"{expected_max_sharpe(n, len(m)):7.2f}{deflated_sharpe_ratio(s, n, len(m)):7.3f}"
+        print(f"  {name:<32}{b.mean() * 365:8.1%}{s:8.2f}"
+              f"{expected_max_sharpe(n, len(m), periods_per_year=12):7.2f}{deflated_sharpe_ratio(s, n, len(m), periods_per_year=12):7.3f}"
               f"{m.min():10.1%}  " + "  ".join(f"{yr.get(y, np.nan):6.1%}" for y in range(2023, 2027))
               + f"   ({old})")
 

@@ -27,8 +27,8 @@ import sys
 import numpy as np
 import pandas as pd
 
-from funding_carry import (COST_PER_LEG, PERP_MARGIN, DATA, HERE, load_basis,
-                           load_funding, sharpe)
+from funding_carry import (COST_PER_LEG, LIQ_PENALTY, MAINT, PERP_MARGIN, DATA, HERE,
+                           load_basis, load_funding, sharpe)
 from deflated_sharpe import deflated_sharpe_ratio, expected_max_sharpe
 import registry
 
@@ -40,7 +40,7 @@ def panel() -> pd.DataFrame:
     f = load_funding()
     b = load_basis()
     fd = f.groupby(["coin", "day"])["rate"].sum().reset_index()
-    p = fd.merge(b[["coin", "day", "basis_pnl"]], on=["coin", "day"], how="inner")
+    p = fd.merge(b[["coin", "day", "basis_pnl", "rally"]], on=["coin", "day"], how="inner")
     p = p.dropna(subset=["basis_pnl"]).sort_values(["coin", "day"]).reset_index(drop=True)
     tb = pd.read_parquet(DATA / "tbill.parquet").set_index("date")["yld"]
     p["tbill"] = tb.reindex(p["day"].dt.tz_localize(None).dt.normalize(),
@@ -48,8 +48,12 @@ def panel() -> pd.DataFrame:
     return p
 
 
-def run(p: pd.DataFrame, lookback: int | None, freq: str) -> pd.DataFrame:
-    """lookback None means always on: the strategy 20 benchmark."""
+def run(p: pd.DataFrame, lookback: int | None, freq: str,
+        liq_penalty: float | None = LIQ_PENALTY) -> pd.DataFrame:
+    """lookback None means always on: the strategy 20 benchmark.
+
+    liq_penalty=None is the uncharged book first published; otherwise the 3x
+    short perp is liquidated as in validate.py (audit 2026-10-29, finding A1)."""
     p = p.copy()
     g = p.groupby("coin")["rate"]
     # Trailing funding through yesterday, annualized. Shifting by one day is the
@@ -73,7 +77,11 @@ def run(p: pd.DataFrame, lookback: int | None, freq: str) -> pd.DataFrame:
     switches = (pos - prev).abs() + np.where(last, pos, 0.0)   # unwind at the end
 
     rf = p["tbill"] / 365
-    carry = (p["rate"] + p["basis_pnl"]) / (1 + PERP_MARGIN)
+    pnl = p["rate"] + p["basis_pnl"]
+    if liq_penalty is not None:
+        liq = (p["rally"] >= PERP_MARGIN - MAINT).astype(float)
+        pnl = pnl - liq * (liq_penalty + 2 * HALF_TRIP)
+    carry = pnl / (1 + PERP_MARGIN)
     cost = switches * HALF_TRIP / (1 + PERP_MARGIN)
     p["pos"] = pos
     p["switches"] = switches
@@ -96,8 +104,8 @@ def summarize(p: pd.DataFrame, name: str, n_trials: int) -> dict:
         "worst_month": m.min(),
         "time_on": p["pos"].mean(),
         "switches_per_coin_year": p["switches"].sum() / coin_years,
-        "luck_bar": expected_max_sharpe(n_trials, len(m)),
-        "deflated_p": deflated_sharpe_ratio(sr, n_trials, len(m)),
+        "luck_bar": expected_max_sharpe(n_trials, len(m), periods_per_year=12),
+        "deflated_p": deflated_sharpe_ratio(sr, n_trials, len(m), periods_per_year=12),
         **{str(y): v for y, v in yr.items()},
     }
 
@@ -108,27 +116,30 @@ def main() -> int:
     print(f"{p.coin.nunique()} coins, {p.day.nunique():,} days, "
           f"{p.day.min().date()} to {p.day.max().date()}, trials to date {n}\n")
 
-    rows = [summarize(run(p, None, "W"), "always on (strategy 20)", n)]
-    for lb, freq, primary in VARIANTS:
-        name = f"{lb}d / {'weekly' if freq == 'W' else 'monthly'}" + ("  PRIMARY" if primary else "")
-        rows.append(summarize(run(p, lb, freq), name, n))
-
-    r = pd.DataFrame(rows).set_index("variant")
     pct = ["excess", "vol", "months_pos", "worst_month", "time_on",
            "2023", "2024", "2025", "2026"]
     fmt = {c: (lambda v: f"{v:7.1%}") for c in pct}
     fmt.update({c: (lambda v: f"{v:6.2f}") for c in
                 ["monthly_sr", "switches_per_coin_year", "luck_bar"]})
     fmt["deflated_p"] = lambda v: f"{v:6.3f}"
-    print("excess over T-bills, per dollar of capital, after costs")
-    print(r[["excess", "vol", "monthly_sr", "luck_bar", "deflated_p", "months_pos",
-             "worst_month", "time_on", "switches_per_coin_year"]].to_string(formatters=fmt))
-    print("\nexcess by year")
-    print(r[["2023", "2024", "2025", "2026"]].to_string(formatters=fmt))
-
     out = HERE / "reports"
     out.mkdir(exist_ok=True)
-    r.to_csv(out / "carry_switch.csv")
+
+    for label, pen, suffix in (("NO LIQUIDATIONS (as first published)", None, "_no_liq"),
+                               ("LIQUIDATIONS CHARGED", LIQ_PENALTY, "")):
+        rows = [summarize(run(p, None, "W", pen), "always on (strategy 20)", n)]
+        for lb, freq, primary in VARIANTS:
+            name = (f"{lb}d / {'weekly' if freq == 'W' else 'monthly'}"
+                    + ("  PRIMARY" if primary else ""))
+            rows.append(summarize(run(p, lb, freq, pen), name, n))
+        r = pd.DataFrame(rows).set_index("variant")
+        print(f"{label}: excess over T-bills, per dollar of capital, after costs")
+        print(r[["excess", "vol", "monthly_sr", "luck_bar", "deflated_p", "months_pos",
+                 "worst_month", "time_on", "switches_per_coin_year"]].to_string(formatters=fmt))
+        print("\nexcess by year")
+        print(r[["2023", "2024", "2025", "2026"]].to_string(formatters=fmt))
+        print()
+        r.to_csv(out / f"carry_switch{suffix}.csv")
     return 0
 
 

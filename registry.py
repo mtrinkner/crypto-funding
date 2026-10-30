@@ -113,8 +113,17 @@ def _close(args, kind: str) -> int:
     if kind == "record" and args.sharpe is not None:
         from deflated_sharpe import deflated_sharpe_ratio, expected_max_sharpe
         n = t["n_trials"]
-        bar = expected_max_sharpe(n, args.n_obs or 348)
-        dsr = deflated_sharpe_ratio(args.sharpe, n, args.n_obs or 348)
+        if not args.n_obs:
+            print("  pass --n-obs to compute the bar: it depends on the sample length",
+                  file=sys.stderr)
+            return 0
+        # Units matter: the bar scales with sqrt(periods per year). The original
+        # equity default was weekly (252/5), but every study in this repo reports
+        # monthly Sharpes, so --n-obs is a month count unless said otherwise
+        # (audit 2026-10-29, finding A4).
+        bar = expected_max_sharpe(n, args.n_obs, periods_per_year=args.periods_per_year)
+        dsr = deflated_sharpe_ratio(args.sharpe, n, args.n_obs,
+                                    periods_per_year=args.periods_per_year)
         print(f"\n  observed Sharpe      {args.sharpe:.3f}")
         print(f"  trials so far        {n}")
         print(f"  expected best by luck{bar:>7.3f}   <- the bar, given how many you tried")
@@ -123,7 +132,7 @@ def _close(args, kind: str) -> int:
     return 0
 
 
-def cmd_status(_args) -> int:
+def cmd_status(args) -> int:
     v = ledger.verify(REGISTRY)
     print(v)
     t = trials()
@@ -134,9 +143,16 @@ def cmd_status(_args) -> int:
     print(f"\nN used by corrections: {t['n_trials']}")
     if t["n_trials"]:
         from deflated_sharpe import expected_max_sharpe
-        bar = expected_max_sharpe(t["n_trials"], 348)
+        # The bar depends on how long the candidate's sample is. It used to be
+        # hardcoded at edge-audit's 348 weekly observations (6.7 years), which is
+        # too LOW a bar for this repo's ~3.4-year samples (audit 2026-10-29, A4).
+        bar = expected_max_sharpe(t["n_trials"], args.n_obs,
+                                  periods_per_year=args.periods_per_year)
+        years = args.n_obs / args.periods_per_year
         print(f"Sharpe a NEW candidate must beat to be interesting: {bar:.3f}")
-        print("(that is the median best result from pure noise across this many trials)")
+        print(f"(the median best result from pure noise across this many trials, for a "
+              f"{years:.1f}-year sample of {args.n_obs} observations at "
+              f"{args.periods_per_year:g} a year; set --n-obs and --periods-per-year)")
     rows = entries()
     decl = [r for r in rows if r["kind"] == "declare"]
     if decl:
@@ -167,6 +183,8 @@ def main() -> int:
     r.add_argument("strategy_id", type=int)
     r.add_argument("--sharpe", type=float)
     r.add_argument("--n-obs", type=int, dest="n_obs")
+    r.add_argument("--periods-per-year", type=float, default=12.0,
+                   help="12 if --n-obs counts months (every study here), 52 for weeks")
     r.add_argument("--note")
     r.set_defaults(func=lambda a: _close(a, "record"))
 
@@ -176,6 +194,9 @@ def main() -> int:
     a.set_defaults(func=lambda x: _close(x, "abandon"))
 
     s = sub.add_parser("status")
+    s.add_argument("--n-obs", type=int, default=42,
+                   help="the candidate's sample length (default 42 months, ~3.4 years)")
+    s.add_argument("--periods-per-year", type=float, default=12.0)
     s.set_defaults(func=cmd_status)
 
     args = ap.parse_args()

@@ -3,6 +3,7 @@
 
     python3 ingest_dydx.py
     python3 ingest_dydx.py --candles   # daily volume and open interest: capacity
+    python3 ingest_dydx.py --status    # which markets stopped trading, and when
 
 The second venue for strategy 25. dYdX v4 is a decentralised perp exchange
 whose indexer serves funding history publicly, with no key, back to its launch
@@ -99,6 +100,14 @@ def candles(ticker: str) -> pd.DataFrame:
 
 
 def pairs() -> list[tuple[str, str]]:
+    # SURVIVORSHIP AND RENAMES: coins are matched by name against TODAY's dYdX
+    # market list, so 15 of the 110 universe coins have no match (as of
+    # 2026-10-29): BIGTIME, CASHCAT, CFX, CHIP, CYBER, FARTCOIN, FTT, INIT,
+    # LAUNCHCOIN, LOOM, MANTA, OGN, PONS, RNDR, YGG. Some are renames that this
+    # exact-name match misses: Hyperliquid's RNDR trades on dYdX as RENDER-USD.
+    # Others (FTT, FARTCOIN) have no dYdX market at all. Settled markets ARE
+    # matched, because the list still includes them; see --status
+    # (audit 2026-10-29).
     universe = pd.read_parquet(DATA / "hl_universe.parquet")["coin"].unique()
     listed = markets()
     out = []
@@ -124,9 +133,59 @@ def main_candles() -> int:
     return 0
 
 
+def stop_time(rates: pd.Series, ts: pd.Series, trade_days: pd.Series):
+    """When a settled market stopped, from the data alone, or None.
+
+    After final settlement the indexer keeps printing rate = 0, so the spread
+    becomes pure Hyperliquid funding (audit 2026-10-29, finding A2). But live
+    dYdX markets print exactly zero about half the time, so a zero run alone
+    proves nothing. A market counts as stopped once BOTH hold: its funding has
+    been zero ever since, and it has had no trades. Only applied to markets
+    that are not ACTIVE today."""
+    x = pd.DataFrame({"ts": ts, "rate": rates}).sort_values("ts")
+    nonzero = x.loc[x["rate"] != 0, "ts"]
+    later = x.loc[x["ts"] > nonzero.max(), "ts"] if len(nonzero) else x["ts"]
+    zero_from = later.min() if len(later) else None          # start of the final zero run
+    end = x["ts"].max()
+    after_trades = (trade_days.max() + pd.Timedelta(days=1)) if len(trade_days) else None
+    if zero_from is None:                    # still printing nonzero funding at the end
+        return after_trades if after_trades is not None and after_trades <= end else None
+    if after_trades is None:
+        return zero_from
+    stop = max(zero_from, after_trades)
+    return stop if stop <= end else None
+
+
+def main_status() -> int:
+    """Market status today, plus the inferred stop for every non-ACTIVE market."""
+    m = get("/perpetualMarkets")["markets"]
+    f = pd.read_parquet(DATA / "dydx_funding.parquet")
+    k = pd.read_parquet(DATA / "dydx_candles.parquet")
+    rows = []
+    for c, t in sorted(f.groupby("coin")["ticker"].first().items()):
+        status = m.get(t, {}).get("status", "NOT LISTED")
+        stop = None
+        if status != "ACTIVE":
+            x = f[f.coin == c]
+            days = k.loc[(k.coin == c) & (k.trades > 0), "day"]
+            stop = stop_time(x["rate"], x["ts"], days)
+        rows.append({"coin": c, "ticker": t, "status": status, "stopped": stop})
+    d = pd.DataFrame(rows)
+    d["as_of"] = pd.Timestamp.now(tz="UTC").floor("s")
+    d.to_parquet(DATA / "dydx_status.parquet", index=False)
+    dead = d[d.stopped.notna()].sort_values("stopped")
+    print(f"{len(d)} markets; {(d.status != 'ACTIVE').sum()} not ACTIVE today; "
+          f"{len(dead)} stopped inside the data:")
+    for _, r in dead.iterrows():
+        print(f"  {r.coin:<8}{r.ticker:<12}{r.status:<18} stopped {r.stopped:%Y-%m-%d}")
+    return 0
+
+
 def main() -> int:
     if "--candles" in sys.argv:
         return main_candles()
+    if "--status" in sys.argv:
+        return main_status()
     universe = pd.read_parquet(DATA / "hl_universe.parquet")["coin"].unique()
     listed = markets()
     pairs = []

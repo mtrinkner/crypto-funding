@@ -115,8 +115,8 @@ def main() -> int:
             "ic": ic.mean(),
             "ic_t": ic.mean() / ic.std() * np.sqrt(len(ic)),
             "btc_corr": book["price"].corr(btc.reindex(book.index)),
-            "bar": expected_max_sharpe(n, len(book)),
-            "p_price": deflated_sharpe_ratio(sr(book["price"]), n, len(book)),
+            "bar": expected_max_sharpe(n, len(book), periods_per_year=52),
+            "p_price": deflated_sharpe_ratio(sr(book["price"]), n, len(book), periods_per_year=52),
         })
         years[name] = book["price"].groupby(book.index.year).mean() * 52
 

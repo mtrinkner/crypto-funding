@@ -9,7 +9,10 @@ whichever way they go.
 Split off from edge-audit on 2026-10-09. The registry here starts by inheriting
 edge-audit's 304 trials (see `registry.py` and the first entry of
 `data/strategy_registry.jsonl`), because moving the research to a new repo
-doesn't reset how many times the same person has searched.
+doesn't reset how many times the same person has searched. Edge-audit kept
+searching after the split, so on 2026-10-29 a top-up entry brought the inherited
+count to 852 and the total to 865, and another top-up goes in before each new
+crypto result. At 865 trials the luck bar for a 42-month monthly series is 1.72.
 
 **What funding is.** A perpetual swap never expires, so the exchange ties it to
 spot with a periodic funding payment: when the perp trades above spot, longs pay
@@ -22,8 +25,9 @@ it had never seen. The single-venue carry generalizes to 94 held-out coins (1.70
 liquidations) but fails once its short perp gets liquidated (-0.24), and its
 excess decayed from 12% to 2% a year. The cross-venue version (strategy 25)
 finds a real, persistent dispersion between Hyperliquid and dYdX, with a gross
-Sharpe of 3.69 and 3.82 in 2025-26 alone. Execution costs as declared eat all
-but 1.1% of it (net Sharpe 0.39). Measured order books and dYdX's own volume history
+Sharpe of 3.72 (5.35 in 2025-26 alone). Execution costs as declared eat all
+but 0.6% of it (net Sharpe 0.24, once coin-days on dYdX markets that had
+already settled are dropped). Measured order books and dYdX's own volume history
 show why: the dispersion lives in markets almost nobody trades, and where size
 is possible it is about the T-bill rate.
 
@@ -86,7 +90,8 @@ position. Six variants were declared, with the primary named before running:
 **Three-week momentum is real and unusable.** It earns 30% a year after costs,
 is positive in both halves of the sample, and is uncorrelated with BTC. But it
 went +87%, -48%, +123% and -30% in successive years, with an 85% maximum
-drawdown, for a Sharpe of 0.52 against a luck bar of 3.23. Shorter horizons are
+drawdown, for a Sharpe of 0.52 against a luck bar of 1.74 at today's 865 trials (1.58 at
+317; first printed as 3.23 in weekly units). Shorter horizons are
 eaten by turnover. Funding works against momentum, because it's long the coins
 that cost the most to hold. On BitMEX from 2017 to 2023, the time-series
 versions on BTC and ETH give 0.45 to 0.49. It fails two of the three declared
@@ -105,19 +110,29 @@ volatile, so it's post-hoc.
 | **Scaled, 30-day volatility (primary)** | 11.1% | **0.35** | 57% |
 | Scaled, 90-day volatility | 13.8% | 0.49 | 51% |
 
-The reason is the most interesting crypto result here:
+**Retracted: "momentum only pays when it's volatile."** An earlier version of
+this section explained the result with a table saying crypto momentum earns
+everything in its most volatile third of days (Sharpe 1.41) and nothing in the
+rest. That table has look-ahead in it. The terciles were cut with `pd.qcut`
+over the full sample, so each day was sorted using volatility levels that
+hadn't happened yet. The script behind it was never committed. It is now
+committed as [`vol_terciles.py`](vol_terciles.py), and it prints both versions
+(audit 2026-10-29, finding A3):
 
-| Momentum's own trailing volatility | Return a year | Sharpe |
+| Momentum's own trailing volatility | Full-sample cutoffs (look-ahead) | Point in time |
 |---|---|---|
-| Calm third of days | -4% | -0.09 |
-| Middle third | -6% | -0.10 |
-| **Volatile third** | **+110%** | **1.41** |
+| Calm third | -0.09 | -0.09 |
+| Middle third | -0.09 | **0.53** |
+| Volatile third | **1.39** | 0.43 |
 
-**All of crypto momentum's return arrives in its most volatile stretches**, the
-opposite of equity momentum. So scaling down when volatile cuts exactly the
-days that pay. The tempting inverse, trading momentum only when it's volatile,
-was thought of after seeing this table on this data, so it isn't backtested
-here. The only honest test of it is forward.
+Point in time ranks each day only against the volatility seen so far, with at
+least 180 days of history. The published 1.41 reproduces as 1.39 in the pinned
+environment. Once the cutoffs stop looking ahead, the volatile third is no
+better than the middle one, so there is no regime effect to explain. The 10
+best days also carry 141% of the book's total P&L, so any split of this book is
+mostly a statement about where those 10 days fell. The "trade momentum only when
+volatile, and test it forward" idea that this table motivated is withdrawn.
+Volatility scaling simply didn't help.
 
 ## Forward test: xv_v1 (strategy 26), running
 
@@ -186,16 +201,16 @@ the time. It's descriptive: no threshold is chosen, and no trials are added.
 
 | dYdX daily volume | Share of held days | Share of gross spread | Gross spread a year |
 |---|---|---|---|
-| under $0.1m | 29% | 31% | 13.2% |
-| $0.1m to $1m | 29% | 25% | 10.6% |
-| $1m to $10m | 27% | 33% | 15.5% |
+| under $0.1m | 29% | 32% | 13.2% |
+| $0.1m to $1m | 29% | 26% | 10.4% |
+| $1m to $10m | 27% | 35% | 15.5% |
 | **over $10m** | 15% | 7% | **5.7%** |
 
 In the only markets that could take size, the spread was 5.7% a year before
 costs, about what T-bills paid. And dYdX has drained: the median universe coin
 traded $5.3m a day there in early 2024 and $0.03m now. The share of the gross
-coming from coins trading over $1m a day fell from 59% in 2024 to 30% in 2025
-and 14% in 2026.
+coming from coins trading over $1m a day fell from 59% in 2024 to 31% in 2025
+and 17% in 2026.
 
 That is the signature of a limits-to-arbitrage premium. The gap persists
 because the markets are too thin to arbitrage, so it was never a free
@@ -222,30 +237,39 @@ mostly Hyperliquid's constant, and it is decaying:
 
 | Year | Spread, short HL / long dYdX | HL interest leg | Spread excluding it |
 |---|---|---|---|
-| 2024 | 9.3% | 11.0% | -1.6% |
-| 2025 | 0.3% | 11.0% | -10.6% |
-| 2026 | -1.7% | 10.9% | -12.6% |
+| 2024 | 9.3% | 11.0% | -1.7% |
+| 2025 | 0.2% | 11.0% | -10.8% |
+| 2026 | 0.2% | 10.9% | -10.7% |
 
 | Variant | Excess over T-bills | Sharpe | 2024 | 2025-26 | Liquidations / coin-yr |
 |---|---|---|---|---|---|
-| **2x, 30-day (primary)** | **1.1%** | **0.39** | 2.77 | -0.36 | 0.47 |
-| 2x, 7-day | 0.8% | 0.29 | 1.52 | -0.12 | 0.54 |
-| 3x, 30-day | -9.4% | -1.66 | | | 2.19 |
-| 3x, 7-day | -11.1% | -1.73 | | | 2.48 |
+| **2x, 30-day (primary)** | **0.6%** | **0.24** | 2.78 | -0.65 | 0.47 |
+| 2x, 7-day | 0.2% | 0.08 | 1.51 | -0.45 | 0.55 |
+| 3x, 30-day | -9.9% | -1.77 | | | 2.20 |
+| 3x, 7-day | -11.9% | -1.90 | | | 2.49 |
 
-All three declared criteria fail: Sharpe 0.39 against 1.5, PSR(SR > 0) 0.71
-against 0.95, and -0.36 in 2025-26. The bootstrap 90% interval is -0.55 to 2.29.
+All three declared criteria fail: Sharpe 0.24 against 1.5, PSR(SR > 0) 0.64
+against 0.95, and -0.65 in 2025-26. The bootstrap 90% interval is -0.67 to 2.12.
+
+**Correction (audit 2026-10-29).** After a dYdX market's final settlement, the
+indexer keeps printing a rate of 0, so the spread becomes pure Hyperliquid
+funding on a market nobody can trade. 38 of 95 dYdX markets stopped inside the
+data, for example FET in June 2024, MATIC in September 2024 and FTM in January
+2025. `ingest_dydx.py --status` now infers each stop, as the point where funding
+stayed at zero and trading stopped, and `cross_venue.py` drops every coin-day
+from then on. That's 59 held coin-days, which took the primary from 1.1% and
+0.39 to 0.6% and 0.24.
 
 **But the dispersion is real; it's the costs that kill it.** The rule picks the
 direction (74% of the time short Hyperliquid), and what it captures holds up:
 
 | Primary, 2x 30-day | Excess | Sharpe |
 |---|---|---|
-| As declared | 1.1% | 0.39 |
-| Without switching and entry costs (8bp per leg) | 3.0% | 1.20 |
-| Without the daily collateral top-up | 2.9% | 1.05 |
-| Without the liquidation penalty | 2.9% | 1.61 |
-| **Nothing charged** | **6.5%** | **3.69** (3.82 in 2025-26) |
+| As declared | 0.6% | 0.24 |
+| Without switching and entry costs (8bp per leg) | 2.6% | 1.07 |
+| Without the daily collateral top-up | 2.4% | 0.93 |
+| Without the liquidation penalty | 2.5% | 1.47 |
+| **Nothing charged** | **6.1%** | **3.72** (5.35 in 2025-26) |
 
 The 5.5 points of drag split about evenly three ways. Each cost was set
 conservatively. The 8bp is a taker fill, where resting orders cost less. The
@@ -268,19 +292,30 @@ universe rule was fixed in the registry before anything was pulled.
 
 | | 16 survivors | **Point-in-time** |
 |---|---|---|
-| 20: always-on carry, excess over T-bills | 4.0%, Sharpe 0.87 | **3.0%, Sharpe 0.51** |
-| 21: switched on trailing funding | 5.9%, Sharpe 1.71 | **7.6%, Sharpe 1.92** |
+| 20: always-on carry, excess over T-bills | 1.1%, Sharpe 0.26 | **-5.6%, Sharpe -1.08** |
+| 21: switched on trailing funding | 4.0%, Sharpe 1.26 | **2.2%, Sharpe 0.72** |
 | 22: funding as a crowding signal, IC (t) | +0.06 (2.15) | **+0.0001 (0.00)** |
+| *20, before liquidations (as first published)* | *4.0%, 0.87* | *3.0%, 0.51* |
+| *21, before liquidations (as first published)* | *5.9%, 1.71* | *7.6%, 1.92* |
 
 Excess is per dollar of capital, after costs. Sharpes are monthly. The luck bar
-is 3.17.
+is 1.72 (865 trials, 42 months; 1.56 at 317 before the 2026-10-29 top-up; first
+printed as 3.17 in weekly units).
 
-| Year | 20 always on | 21 switched |
-|---|---|---|
-| 2023 | -8.5% | +8.4% |
-| 2024 | +15.8% | +15.5% |
-| 2025 | +1.4% | +3.4% |
-| 2026 | -2.0% | +1.9% |
+**Correction (audit 2026-10-29).** These carry books first ran without ever
+liquidating the 3x short perp, while `validate.py` charged liquidations only on
+the holdout. They now use `validate.py`'s model: liquidated when the day's high
+clears the prior close by 30%, at a cost of 5% of notional plus re-entry. That's
+147 liquidations on 24,839 held coin-days for strategy 20 and 92 on 15,983 for
+strategy 21. The uncharged figures, kept above in italics, are what the rest of
+this section originally described.
+
+| Year | 20 always on | 21 switched | 20, liquidations charged | 21, liquidations charged |
+|---|---|---|---|---|
+| 2023 | -8.5% | +8.4% | -14.8% | +5.2% |
+| 2024 | +15.8% | +15.5% | +8.0% | +8.7% |
+| 2025 | +1.4% | +3.4% | -11.6% | -3.7% |
+| 2026 | -2.0% | +1.9% | -8.0% | -1.2% |
 
 - **Survivorship was flattering the carry.** On the wider universe, always-on
   pays 3.0% over T-bills, and 2026 is negative.
@@ -291,11 +326,12 @@ is 3.17.
   contribute, the top five are 36% of it, and delisted coins add 0.4 points.
   Without the top five it's still 7.5% with a Sharpe of 1.94. A wider universe
   has more coins whose funding goes negative, and the rule's job is to stop
-  paying on them. That makes it the best risk-adjusted result across edge-audit and this repo
-  outside the forward test. It still doesn't clear the bar (deflated p 0.135),
-  and its Sharpe is low-variance for the same reason strategy 20's daily Sharpe
-  was 7: the volatility is the wobble in a cash flow, and the risk is a tail
-  (squeeze, venue failure) that no series contains.
+  paying on them. But all of this is before liquidations. Uncharged, its 1.92
+  would clear the correctly computed bar of 1.72 (deflated p 0.64 at 865 trials,
+  0.74 at 317; first printed as 0.135 in the wrong units). With liquidations
+  charged it is 0.72 (deflated p 0.03), and it fails. Its Sharpe is also low-variance for the same reason
+  strategy 20's daily Sharpe was 7: the volatility is the wobble in a cash flow,
+  and the risk is a tail (squeeze, venue failure) that no series contains.
 
 The precommitment said the point-in-time numbers replace the survivor numbers
 whichever way they went. One went up, so it's reported going up. The sections
@@ -369,9 +405,12 @@ DefiLlama: carry off when 30-day supply growth is negative).
 - **The primary decays to zero:** 7.8% excess and Sharpe 1.93 in 2023-24,
   0.1% and Sharpe 0.13 in 2025-26.
 
-Deflated p for the primary is 0.23 against the 19 crypto trials and 0.04
-against all 304 in the repo. **Nothing here clears a defensible out-of-sample
-1.5.**
+Deflated p for the primary is 0.66 against the 19 crypto trials (bar 1.00)
+and 0.20 against all 865 (bar 1.72; 0.29 and 1.55 against the 304 inherited at the split). Both were first printed in weekly units,
+as 0.23 and 0.04. Against the crypto trials alone, the primary's 1.24 does beat
+the expected best result from luck. Once liquidations are charged, it's the
+only crypto result that does. But a deflated p of 0.66 is a long way from
+significant. **Nothing here clears a defensible out-of-sample 1.5.**
 
 ## What would actually move it
 
@@ -400,7 +439,13 @@ against all 304 in the repo. **Nothing here clears a defensible out-of-sample
 | Equal-weight book, after basis and costs | 11.2% |
 | Per dollar of capital (spot leg + 3x perp margin) | 8.4% |
 | **In excess of T-bills** | **4.0%** |
-| Monthly Sharpe of the excess | 0.87 against a luck bar of 3.07, deflated p 0.024 |
+| Monthly Sharpe of the excess | 0.87 against a luck bar of 1.50, deflated p 0.13 |
+| **With liquidations charged (audit 2026-10-29)** | **1.1% excess, Sharpe 0.26, deflated p 0.008** |
+
+The bar and deflated p were first printed in weekly units, as 3.07 and 0.024.
+The liquidation line uses `validate.py`'s model, with the high taken from
+Hyperliquid's daily candle, because OKX bars have closes only: 27 liquidations
+on these 16 coins.
 
 | Year | Funding | Excess over T-bills, per dollar of capital |
 |---|---|---|
@@ -438,7 +483,10 @@ named in advance.
 | 7-day, weekly | 5.7% | 1.54 | -0.3% | 66% |
 | 7-day, monthly | 5.5% | 1.55 | -0.3% | 65% |
 
-The luck bar at 228 trials is 3.08. The primary's deflated p is 0.11.
+The luck bar at 228 trials is 1.50, and the primary's deflated p is 0.64 (first
+printed in weekly units as 3.08 and 0.11). Those figures are before
+liquidations. Charged, the primary is 4.0% and Sharpe 1.26, deflated p 0.21 at
+today's 865 trials (0.30 at 317), and the other variants are 1.05 to 1.15.
 
 It isn't lookahead. Letting the rule peek one week ahead gives 6.5%. Delaying
 it 7, 14 and 30 days gives 5.3%, 4.8% and 4.2%, a smooth decay toward
@@ -553,6 +601,7 @@ python3 ingest_dydx.py --candles            # dYdX daily volume and open interes
 python3 capacity.py                         # where strategy 25's gross came from, by liquidity
 python3 daily_momentum.py                   # strategy 27, daily momentum and reversal
 python3 vol_momentum.py                     # strategy 28, volatility-managed momentum
+python3 vol_terciles.py                     # retracted regime table, full-sample vs point in time
 python3 ingest_bitmex.py                    # BitMEX funding + perp/spot daily since 2016
 python3 out_of_time.py                      # the carry rules on 2017-2023 bear markets
 ```

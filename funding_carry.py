@@ -49,7 +49,8 @@ import registry
 INTEREST_PER_HOUR = 0.0001 / 8      # Hyperliquid's fixed interest leg
 COST_PER_LEG = 0.0008               # taker fee plus half-spread, each of 4 legs
 PERP_MARGIN = 1 / 3                 # 3x on the short perp
-LIQ_RALLY = 0.30                    # a rally this size wipes a 3x short's margin
+MAINT = 0.03                        # maintenance margin, as in validate.py
+LIQ_PENALTY = 0.05                  # per liquidation, on notional, plus re-entry legs
 DAY_OFFSET = pd.Timedelta(hours=16)  # OKX daily candles open at 16:00 UTC
 
 
@@ -67,12 +68,35 @@ def load_funding() -> pd.DataFrame:
 
 def load_basis() -> pd.DataFrame:
     b = pd.read_parquet(DATA / "okx_basis.parquet").sort_values(["coin", "ts"])
+    # Everything here joins on OKX's daily bar opening at 16:00 UTC (bar=1D,
+    # Hong Kong midnight), which is what the pinned file holds. ingest_okx.py now
+    # requests 1Dutc, so a re-pull would shift every bar by 16 hours. Refuse
+    # rather than misalign silently.
+    hours = b["ts"].dt.hour.unique()
+    if set(hours) != {16}:
+        raise RuntimeError(f"okx_basis.parquet bars open at {sorted(hours)}h UTC, not 16h: "
+                           "it was re-pulled with bar=1Dutc. Set DAY_OFFSET to 0 and the "
+                           "8-hour shift in load_rally() to 0 before using it.")
     g = b.groupby("coin")
     # Long spot, short perp, per dollar of notional.
     b["basis_pnl"] = g["close_spot"].pct_change() - g["close_perp"].pct_change()
     b["basis"] = b["close_perp"] / b["close_spot"] - 1
-    b["rally3"] = g["close_spot"].transform(lambda s: s.shift(-3) / s - 1)
-    return b.rename(columns={"ts": "day"})
+    b = b.rename(columns={"ts": "day"})
+    return b.merge(load_rally(), on=["coin", "day"], how="left")
+
+
+def load_rally() -> pd.DataFrame:
+    """The day's high against the prior close, which is what liquidates a short perp.
+
+    OKX's daily bars have closes only, so the high comes from Hyperliquid's daily
+    perp candle for the same coin. An OKX bar opens at 16:00 UTC, so OKX day d
+    is matched to Hyperliquid's UTC day d+1, which covers 16 of its 24 hours.
+    That's an approximation (audit 2026-10-29, finding A1)."""
+    c = pd.read_parquet(DATA / "hl_candles.parquet")[["coin", "day", "close", "high"]]
+    c = c.sort_values(["coin", "day"])
+    c["rally"] = c["high"] / c.groupby("coin")["close"].shift(1) - 1
+    c["day"] = c["day"] - pd.Timedelta(hours=8)          # HL 00:00 d+1 -> OKX 16:00 d
+    return c[["coin", "day", "rally"]]
 
 
 def annualized_by_coin(f: pd.DataFrame) -> pd.DataFrame:
@@ -115,7 +139,7 @@ def main() -> int:
 
     # Daily coin panel: funding cash joined to the basis marked on OKX.
     fd = f.groupby(["coin", "day"])[["rate", "interest", "market"]].sum().reset_index()
-    p = fd.merge(b[["coin", "day", "basis_pnl", "basis", "rally3"]],
+    p = fd.merge(b[["coin", "day", "basis_pnl", "basis", "rally"]],
                  on=["coin", "day"], how="inner").dropna(subset=["basis_pnl"])
     # Entry and exit, four legs each way, charged once per coin.
     rt = 2 * 2 * COST_PER_LEG
@@ -123,11 +147,17 @@ def main() -> int:
     last = p.groupby("coin")["day"].transform("max") == p["day"]
     p["cost"] = np.where(first | last, rt / 2, 0.0)
     p["net"] = p["rate"] + p["basis_pnl"] - p["cost"]
+    # The 3x short perp is liquidated when the day's high clears the prior close
+    # by 1/L - 3%, as in validate.py: lose LIQ_PENALTY plus a re-entry round trip.
+    p["liq"] = (p["rally"] >= PERP_MARGIN - MAINT).astype(float)
+    p["liq_cost"] = p["liq"] * (LIQ_PENALTY + rt)
 
-    book = p.groupby("day")[["rate", "interest", "market", "basis_pnl", "cost", "net"]].mean()
+    book = p.groupby("day")[["rate", "interest", "market", "basis_pnl", "cost", "net",
+                             "liq_cost"]].mean()
     book["rf"] = tb.reindex(book.index.tz_localize(None).normalize(), method="ffill").values / 365
     book["on_capital"] = book["net"] / (1 + PERP_MARGIN)
     book["excess"] = book["on_capital"] - book["rf"]
+    book["excess_liq"] = (book["net"] - book["liq_cost"]) / (1 + PERP_MARGIN) - book["rf"]
 
     print(f"\nequal-weight book, {len(book):,} days, {p.coin.nunique()} coins, "
           f"{book.index.min().date()} to {book.index.max().date()}")
@@ -137,6 +167,7 @@ def main() -> int:
         ("  + costs", book["net"]),
         ("  per dollar of capital", book["on_capital"]),
         ("  minus T-bills", book["excess"]),
+        ("  + liquidations charged", book["excess_liq"]),
     ]
     print(f"  {'':<28}{'ann.':>8}{'vol':>8}{'daily SR':>10}")
     for name, s in rows:
@@ -156,22 +187,26 @@ def main() -> int:
     print("\nby year, annualized")
     print(by_year.to_string(float_format=lambda v: f"{v:8.1%}"))
 
-    m = book["excess"].groupby(book.index.strftime("%Y-%m")).sum()
-    sr_m = sharpe(m, 12)
     n = registry.trials()["n_trials"]
-    print(f"\nmonthly, in excess of T-bills: {len(m)} months, {(m > 0).mean():.0%} positive")
-    print(f"  sharpe {sr_m:.2f}   luck bar at {n} trials {expected_max_sharpe(n, len(m)):.2f}"
-          f"   deflated p {deflated_sharpe_ratio(sr_m, n, len(m)):.3f}")
+    for label, col in (("no liquidations (as first published)", "excess"),
+                       ("liquidations charged", "excess_liq")):
+        m = book[col].groupby(book.index.strftime("%Y-%m")).sum()
+        sr_m = sharpe(m, 12)
+        print(f"\nmonthly, in excess of T-bills, {label}: {len(m)} months, "
+              f"{(m > 0).mean():.0%} positive")
+        print(f"  sharpe {sr_m:.2f}   luck bar at {n} trials {expected_max_sharpe(n, len(m), periods_per_year=12):.2f}"
+              f"   deflated p {deflated_sharpe_ratio(sr_m, n, len(m), periods_per_year=12):.3f}")
 
     print("\nthe risk the funding series does not show")
     print(f"  worst single coin-day basis loss   {p.basis_pnl.min():7.2%}")
     print(f"  worst book day                     {book['net'].min():7.2%}")
     print(f"  coin-days with |basis| > 1%        {(p.basis.abs() > 0.01).mean():7.2%}")
-    liq = p[p.rally3 > LIQ_RALLY]
+    liq = p[p["liq"] > 0]
     coin_years = p.groupby("coin")["day"].agg(lambda d: (d.max() - d.min()).days / 365.25).sum()
-    print(f"  3-day rallies over {LIQ_RALLY:.0%} (liquidates a 3x short perp left unrebalanced)")
+    print(f"  liquidations of the 3x short perp (day's high >= prior close +{PERP_MARGIN - MAINT:.0%})")
     print(f"    {liq.coin.nunique()} of {p.coin.nunique()} coins, "
-          f"{len(liq)} coin-days, {len(liq) / coin_years:.1f} per coin-year")
+          f"{len(liq)} coin-days, {len(liq) / coin_years:.1f} per coin-year "
+          f"({p['rally'].isna().mean():.1%} of coin-days have no Hyperliquid high)")
 
     out = HERE / "reports"
     out.mkdir(exist_ok=True)

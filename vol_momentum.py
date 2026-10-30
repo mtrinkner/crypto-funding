@@ -72,7 +72,7 @@ def main() -> int:
         mid = net.index.min() + (net.index.max() - net.index.min()) / 2
         sr = sharpe_m(net)
         print(f"{name:<28}{net.mean() * 365:8.1%}{net.std() * np.sqrt(365):8.1%}{sr:7.2f}"
-              f"{psr(net, 0):7.2f}{deflated_sharpe_ratio(sr, n_all, len(monthly(net))):7.3f}"
+              f"{psr(net, 0):7.2f}{deflated_sharpe_ratio(sr, n_all, len(monthly(net)), periods_per_year=12):7.3f}"
               f"{sharpe_m(net[net.index < mid]):9.2f}{sharpe_m(net[net.index >= mid]):9.2f}"
               f"{drawdown(net):8.1%}{-b['cost'].mean() * 365:8.1%}")
         return net, mid
@@ -84,7 +84,7 @@ def main() -> int:
         if primary:
             prim, pk, pmid = net, k, mid
     print(f"\nluck bar at {n_all} trials and {len(monthly(prim))} months: "
-          f"{expected_max_sharpe(n_all, len(monthly(prim))):.2f}")
+          f"{expected_max_sharpe(n_all, len(monthly(prim)), periods_per_year=12):.2f}")
 
     yr = prim.groupby(prim.index.year).mean() * 365
     print("primary net by year: " + ", ".join(f"{y} {v:+.1%}" for y, v in yr.items()))
