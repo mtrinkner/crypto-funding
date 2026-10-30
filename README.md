@@ -24,10 +24,12 @@ as a contractual cash flow rather than a forecast.
 it had never seen. The single-venue carry generalizes to 94 held-out coins (1.70 before
 liquidations) but fails once its short perp gets liquidated (-0.24), and its
 excess decayed from 12% to 2% a year. The cross-venue version (strategy 25)
-finds a real, persistent dispersion between Hyperliquid and dYdX, with a gross
-Sharpe of 3.72 (5.35 in 2025-26 alone). Execution costs as declared eat all
-but 0.6% of it (net Sharpe 0.24, once coin-days on dYdX markets that had
-already settled are dropped). Measured order books and dYdX's own volume history
+finds a real, persistent dispersion between Hyperliquid and dYdX, with a
+Sharpe of 3.72 gross, before any costs. In 2025-26 that gross figure is 5.35,
+but the net Sharpe after declared costs is -0.65 and the raw spread is 0.2% a
+year, so it is not an edge. Execution costs as declared eat all but 0.6% of it
+(net Sharpe 0.24, once coin-days on dYdX markets that had already settled are
+dropped). Measured order books and dYdX's own volume history
 show why: the dispersion lives in markets almost nobody trades, and where size
 is possible it is about the T-bill rate.
 
@@ -263,13 +265,22 @@ from then on. That's 59 held coin-days, which took the primary from 1.1% and
 **But the dispersion is real; it's the costs that kill it.** The rule picks the
 direction (74% of the time short Hyperliquid), and what it captures holds up:
 
-| Primary, 2x 30-day | Excess | Sharpe |
-|---|---|---|
-| As declared | 0.6% | 0.24 |
-| Without switching and entry costs (8bp per leg) | 2.6% | 1.07 |
-| Without the daily collateral top-up | 2.4% | 0.93 |
-| Without the liquidation penalty | 2.5% | 1.47 |
-| **Nothing charged** | **6.1%** | **3.72** (5.35 in 2025-26) |
+| Primary, 2x 30-day | Excess | Sharpe | 2025-26 excess | 2025-26 Sharpe |
+|---|---|---|---|---|
+| As declared | 0.6% | 0.24 | -1.8% | **-0.65** |
+| Without switching and entry costs (8bp per leg) | 2.6% | 1.07 | 0.3% | 0.11 |
+| Without the daily collateral top-up | 2.4% | 0.93 | -0.1% | -0.02 |
+| Without the liquidation penalty | 2.4% | 1.47 | 0.4% | 0.49 |
+| **Nothing charged (gross, before any costs)** | **6.1%** | **3.72** | 4.1% | 5.35 |
+
+`python3 cross_venue.py --costs` prints this table. The 5.35 is gross: in
+2025-26 the trade as declared has a Sharpe of -0.65, and the raw spread was
+0.2% a year. The re-entry legs after a liquidation count in both the switching
+row and the liquidation row, so the savings overlap slightly and don't sum to
+the gross row. Dropping the settled-market days raised the 2025-26 gross Sharpe
+from 3.82 to 5.35 because those days added more variance than mean: they were
+pure Hyperliquid funding and premium swings, and removing them cut the gross
+mean from 4.8% to 4.1% a year but monthly volatility by about 40%.
 
 The 5.5 points of drag split about evenly three ways. Each cost was set
 conservatively. The 8bp is a taker fill, where resting orders cost less. The

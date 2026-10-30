@@ -2,6 +2,7 @@
 """Strategy 25: funding dispersion between Hyperliquid and dYdX v4.
 
     python3 cross_venue.py
+    python3 cross_venue.py --costs     # the README's cost table for the primary
 
 The single-venue carry failed out of sample because its spot hedge leaves a
 short perp exposed to squeezes, and because its excess decayed. This trade has
@@ -71,7 +72,10 @@ def panel(drop_settled: bool = True) -> pd.DataFrame:
 
 
 def book(d: pd.DataFrame, lev: float, lookback: int, liq_penalty: float = 0.05,
-         detail: bool = False):
+         detail: bool = False, switch_cost: float = HALF_TRIP,
+         topup_cost: float = 2 * COST_PER_LEG, reentry_cost: float = 2 * HALF_TRIP):
+    """The cost arguments default to the declared costs; cost_breakdown() turns
+    them off one at a time."""
     x = d.copy()
     margin = 1 / lev
     cap = 2 * margin                                    # both legs post margin
@@ -87,14 +91,14 @@ def book(d: pd.DataFrame, lev: float, lookback: int, liq_penalty: float = 0.05,
     # Cross-venue basis: Hyperliquid's side marked by its premium to the oracle.
     pnl = pnl - expo * x["premium"].groupby(x["coin"]).diff().fillna(0.0)
     # Daily collateral rebalancing between venues, charged like a trade.
-    pnl = pnl - expo.abs() * 2 * COST_PER_LEG * x["ret"].abs().fillna(0.0)
+    pnl = pnl - expo.abs() * topup_cost * x["ret"].abs().fillna(0.0)
     liq = ((x["rally"] >= margin - MAINT) | (x["drop"] >= margin - MAINT)).astype(float)
-    pnl = pnl - expo.abs() * liq * (liq_penalty + 2 * HALF_TRIP)
+    pnl = pnl - expo.abs() * liq * (liq_penalty + reentry_cost)
 
     prev = expo.groupby(x["coin"]).shift(1).fillna(0.0)
     last = x.groupby("coin")["day"].transform("max") == x["day"]
     trades = (expo - prev).abs() + np.where(last, expo.abs(), 0.0)
-    ex = expo.abs() * (-x["tbill"] / 365) + pnl / cap - trades * HALF_TRIP / cap
+    ex = expo.abs() * (-x["tbill"] / 365) + pnl / cap - trades * switch_cost / cap
 
     keep = (x["member"] > 0) & (x["day"] >= START)
     b = ex[keep].groupby(x.loc[keep, "day"]).mean()
@@ -104,7 +108,39 @@ def book(d: pd.DataFrame, lev: float, lookback: int, liq_penalty: float = 0.05,
     return b, x[keep]
 
 
+def cost_breakdown() -> int:
+    """The primary with each declared cost turned off one at a time, then all.
+
+    A liquidation forces a re-entry, two legs at HALF_TRIP each. Those legs are
+    trades, so they go with the switching row, and they are part of what a
+    liquidation costs, so they go with the liquidation row too. The rows are each
+    'without this cost', so their savings overlap by that much and don't sum to
+    the nothing-charged row."""
+    d = panel()
+    rows = [
+        ("As declared", {}),
+        ("Without switching and entry costs (8bp per leg)",
+         {"switch_cost": 0.0, "reentry_cost": 0.0}),
+        ("Without the daily collateral top-up", {"topup_cost": 0.0}),
+        ("Without the liquidation penalty", {"liq_penalty": 0.0, "reentry_cost": 0.0}),
+        ("Nothing charged (gross, before any costs)",
+         {"switch_cost": 0.0, "topup_cost": 0.0, "liq_penalty": 0.0, "reentry_cost": 0.0}),
+    ]
+    print("primary, 2x 30-day, excess over T-bills; Sharpes monthly\n")
+    print(f"{'':<50}{'excess':>8}{'Sharpe':>8}{'2025-26':>9}{'SR 25-26':>9}")
+    for name, kw in rows:
+        b = book(d, 2.0, 30, **kw)
+        late = b[b.index >= "2025-01-01"]
+        print(f"{name:<50}{b.mean() * 365:8.1%}{sharpe_m(b):8.2f}"
+              f"{late.mean() * 365:9.1%}{sharpe_m(late):9.2f}")
+    live = d[(d.member > 0) & (d.day >= "2025-01-01")]
+    print(f"\nraw spread, short HL / long dYdX, 2025-26: {live['spread'].mean() * 365:.1%} a year")
+    return 0
+
+
 def main() -> int:
+    if "--costs" in sys.argv[1:]:
+        return cost_breakdown()
     d = panel()
     rows = registry.entries()
     n_all = registry.trials()["n_trials"]
